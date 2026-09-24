@@ -4,7 +4,15 @@ const logger = require("../utils/logger.js");
 
 const EVENTS_DIR = path.join(__dirname, "..", "events");
 
-function loadEvents(client) {
+// Loader mode "music" tetap disimpan untuk kompatibilitas project lama.
+const MUSIC_ONLY_EVENTS = new Set(["ready", "interactionCreate"]);
+
+/**
+ * @param {import("discord.js").Client} client
+ * @param {"full"|"music"} [mode]
+ */
+function loadEvents(client, mode = "full") {
+    const musicOnlyMode = mode === "music";
     const files = fs.readdirSync(EVENTS_DIR).filter((f) => f.endsWith(".js"));
     let count = 0;
 
@@ -19,6 +27,8 @@ function loadEvents(client) {
                 continue;
             }
 
+            if (musicOnlyMode && !MUSIC_ONLY_EVENTS.has(event.name)) continue;
+
             if (event.once) {
                 client.once(event.name, (...args) => event.execute(...args, client));
             } else {
@@ -30,7 +40,7 @@ function loadEvents(client) {
         }
     }
 
-    logger.info(`Berhasil memuat ${count} event.`);
+    logger.info(`[${client.botLabel || (musicOnlyMode ? "MUSIC" : "MAIN")}] Berhasil memuat ${count} event.`);
 }
 
 module.exports = { loadEvents };

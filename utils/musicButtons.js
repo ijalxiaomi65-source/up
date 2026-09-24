@@ -6,7 +6,7 @@
 const settings = require("../settings.js");
 const db = require("./database.js");
 const { createErrorEmbed, createInfoEmbed, createSuccessEmbed } = require("./embeds.js");
-const { buildNowPlayingEmbed, buildControlRows } = require("./musicPanel.js");
+const { buildNowPlayingEmbed, buildIdleMusicEmbed, buildControlRows } = require("./musicPanel.js");
 
 const MAX_QUEUE_SHOWN = 15;
 const MAX_FAVORITES = 50;
@@ -128,14 +128,20 @@ async function handleMusicButton(interaction) {
             const voice = queue.voice;
             await queue.stop();
             voice?.leave();
-            return interaction.update({ embeds: [createSuccessEmbed("Bot terputus dari voice channel.", "🔌 Disconnect")], components: [] });
+            return interaction.update({
+                embeds: [buildIdleMusicEmbed("Bot terputus dari voice channel.")],
+                components: buildControlRows(null)
+            });
         }
 
         if (id === "music_stop") {
             const voice = queue.voice;
             await queue.stop();
             if (settings.music.leaveOnStop) voice?.leave();
-            return interaction.update({ embeds: [createSuccessEmbed("Musik dihentikan dan antrian dihapus.", "⏹️ Stop")], components: [] });
+            return interaction.update({
+                embeds: [buildIdleMusicEmbed("Musik dihentikan dan antrian dihapus.")],
+                components: buildControlRows(null)
+            });
         }
     } catch (err) {
         return interaction.reply({ embeds: [createErrorEmbed(`Gagal memproses aksi: \`${err.message}\``)], ephemeral: true }).catch(() => {});
@@ -193,6 +199,32 @@ async function handleMusicMoreMenu(interaction) {
 
     if (value === "favorites") return sendFavoritesList(interaction);
     if (value === "lyrics") return sendLyrics(interaction, queue);
+
+    if (value.startsWith("effect_")) {
+        const check = memberInSameVoice(interaction, queue);
+        if (!check.ok) {
+            return interaction.reply({ embeds: [createErrorEmbed(check.reason)], ephemeral: true }).catch(() => {});
+        }
+
+        const effect = value.slice("effect_".length);
+        try {
+            if (effect === "off") {
+                queue.filters.clear();
+            } else {
+                queue.filters.clear();
+                queue.filters.add(effect);
+            }
+            return interaction.update({
+                embeds: [buildNowPlayingEmbed(queue, queue.songs[0])],
+                components: buildControlRows(queue)
+            });
+        } catch (err) {
+            return interaction.reply({
+                embeds: [createErrorEmbed(`Gagal menerapkan efek audio: \`${err.message}\``)],
+                ephemeral: true
+            }).catch(() => {});
+        }
+    }
 }
 
 /** Untuk aksi read-only (favorit, lirik) yang balasnya ephemeral & tidak mengubah playback. */

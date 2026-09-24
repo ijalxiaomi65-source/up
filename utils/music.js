@@ -8,7 +8,7 @@ const settings = require("../settings.js");
 const logger = require("./logger.js");
 const db = require("./database.js");
 const { startGuard } = require("./voiceGuard.js");
-const { createInfoEmbed, createSuccessEmbed, createErrorEmbed } = require("./embeds.js");
+const { recordHistory } = require("./musicFeatures.js");
 
 /**
  * Cek apakah mode 24/7 (/247) aktif untuk guild ini. Kalau aktif, bot TIDAK
@@ -19,18 +19,9 @@ function is247Enabled(guildId) {
     return !!db.getGuild(guildId)?.musicMode247;
 }
 
-// Interval "Now Playing" yang live-update progress bar tiap beberapa detik,
-// per guild. Di-clear tiap kali lagu ganti/berhenti supaya tidak numpuk/leak.
-const npIntervals = new Map();
+// Map npIntervals dibuat PER PANGGILAN setupMusic() agar live-update tetap
+// terisolasi tanpa membuat interval global yang saling menimpa.
 const NP_UPDATE_INTERVAL_MS = 15000;
-
-function clearNpInterval(guildId) {
-    const interval = npIntervals.get(guildId);
-    if (interval) {
-        clearInterval(interval);
-        npIntervals.delete(guildId);
-    }
-}
 
 /**
  * Setelah DisTube keluar dari voice channel (lagu habis, /stop, channel kosong, dsb),
@@ -62,13 +53,23 @@ function resumeGuardIfNeeded(client, queue) {
 
 // Pastikan ffmpeg-static ditemukan oleh @discordjs/voice / prism-media tanpa perlu install FFmpeg manual di OS.
 try {
-    process.env.FFMPEG_PATH = process.env.FFMPEG_PATH || require("ffmpeg-static");
+    // The Replit runtime already provides a shared FFmpeg 6.x build. It
+    // handles the remote SoundCloud stream correctly, while the bundled
+    // ffmpeg-static binary can segfault on this stream type.
+    const { execFileSync } = require("node:child_process");
+    execFileSync("ffmpeg", ["-version"], { stdio: "ignore" });
+    process.env.FFMPEG_PATH = process.env.FFMPEG_PATH || "ffmpeg";
 } catch {
-    // ffmpeg-static tidak terpasang / gagal load -> DisTube akan coba pakai FFmpeg dari system PATH.
+    // Fallback untuk environment yang tidak menyediakan FFmpeg di PATH.
+    try {
+        process.env.FFMPEG_PATH = process.env.FFMPEG_PATH || require("ffmpeg-static");
+    } catch {
+        // DisTube akan memberi error yang jelas saat mencoba memutar.
+    }
 }
 
 const { loopLabel, progressBar, statusLine, BASS_BOOST_PRESETS, REPEAT_LABELS } = require("./musicFormat.js");
-const { buildNowPlayingEmbed, buildControlRows } = require("./musicPanel.js");
+const { buildNowPlayingEmbed, buildIdleMusicEmbed, buildControlRows } = require("./musicPanel.js");
 const { ensureYtDlpConfig } = require("./ytdlpConfig.js");
 
 /**
@@ -79,6 +80,133 @@ function setupMusic(client) {
     if (!settings.music?.enabled) {
         logger.warn("Fitur music dinonaktifkan (settings.music.enabled = false).");
         return null;
+    }
+
+    // Interval "Now Playing" live-update, khusus milik instance bot ini saja
+    // (lihat catatan di atas const NP_UPDATE_INTERVAL_MS).
+    const npIntervals = new Map();
+    const panelCache = new Map();
+    const panelLocks = new Map();
+
+    function clearNpInterval(guildId) {
+        const interval = npIntervals.get(guildId);
+        if (interval) {
+            clearInterval(interval);
+            npIntervals.delete(guildId);
+        }
+    }
+
+    function withPanelLock(guildId, task) {
+        const previous = panelLocks.get(guildId) || Promise.resolve();
+        const current = previous
+            .catch(() => {})
+            .then(task)
+            .finally(() => {
+                if (panelLocks.get(guildId) === current) panelLocks.delete(guildId);
+            });
+        panelLocks.set(guildId, current);
+        return current;
+    }
+
+    async function fetchSavedPanel(guildId) {
+        const saved = db.getGuild(guildId).musicPanel;
+        if (!saved?.channelId || !saved?.messageId) return null;
+
+        const channel = await client.channels.fetch(saved.channelId).catch(() => null);
+        if (!channel?.isTextBased?.()) return null;
+        return channel.messages.fetch(saved.messageId).catch(() => null);
+    }
+
+    function isMusicPanel(message) {
+        return Boolean(
+            message?.author?.id === client.user?.id &&
+            message.components?.some((row) =>
+                row.components?.some((component) => component.customId?.startsWith("music_"))
+            )
+        );
+    }
+
+    async function findRecentPanel(channel) {
+        if (!channel?.messages?.fetch) return null;
+        const messages = await channel.messages.fetch({ limit: 50 }).catch(() => null);
+        return messages ? [...messages.values()].find((message) => isMusicPanel(message)) : null;
+    }
+
+    function panelPayload(queue, song, idleReason) {
+        return song
+            ? { embeds: [buildNowPlayingEmbed(queue, song)], components: buildControlRows(queue) }
+            : { embeds: [buildIdleMusicEmbed(idleReason)], components: buildControlRows(null) };
+    }
+
+    async function updateMusicPanel(queue, song = queue?.songs?.[0], idleReason) {
+        const guildId = queue?.textChannel?.guildId || queue?.id;
+        if (!guildId) return null;
+
+        return withPanelLock(guildId, async () => {
+            let panel = panelCache.get(guildId);
+            if (!panel) panel = await fetchSavedPanel(guildId);
+            if (!panel && queue?.textChannel) panel = await findRecentPanel(queue.textChannel);
+
+            const payload = panelPayload(queue, song, idleReason);
+            if (panel) {
+                try {
+                    await panel.edit(payload);
+                } catch {
+                    panel = null;
+                }
+            }
+
+            if (!panel && queue?.textChannel) {
+                panel = await queue.textChannel.send(payload).catch(() => null);
+            }
+            if (!panel) return null;
+
+            panelCache.set(guildId, panel);
+            db.updateGuild(guildId, {
+                musicPanel: { channelId: panel.channelId, messageId: panel.id }
+            });
+            return panel;
+        });
+    }
+
+    // Discord tidak punya fitur "sticky message". Supaya panel selalu berada
+    // tepat di bawah request lagu terbaru, panel lama dipindahkan dengan cara
+    // menghapusnya lalu mengirim ulang di posisi paling bawah channel.
+    async function reanchorMusicPanel(guildId, channel) {
+        return withPanelLock(guildId, async () => {
+            const queue = distube.getQueue(guildId);
+            if (!queue || !channel?.send) return null;
+
+            let panel = panelCache.get(guildId);
+            if (!panel) panel = await fetchSavedPanel(guildId);
+            if (!panel) panel = await findRecentPanel(channel);
+            await panel?.delete().catch(() => {});
+            panelCache.delete(guildId);
+
+            const nextPanel = await channel.send(panelPayload(queue, queue.songs?.[0])).catch(() => null);
+            if (!nextPanel) return null;
+
+            panelCache.set(guildId, nextPanel);
+            db.updateGuild(guildId, {
+                musicPanel: { channelId: nextPanel.channelId, messageId: nextPanel.id }
+            });
+            return nextPanel;
+        });
+    }
+
+    async function setPanelIdle(guildId, reason) {
+        return withPanelLock(guildId, async () => {
+            let panel = panelCache.get(guildId);
+            if (!panel) panel = await fetchSavedPanel(guildId);
+            if (!panel) return null;
+
+            await panel.edit({
+                embeds: [buildIdleMusicEmbed(reason)],
+                components: buildControlRows(null)
+            }).catch(() => {});
+            panelCache.set(guildId, panel);
+            return panel;
+        });
     }
 
     // Tulis/refresh config global yt-dlp SEBELUM YtDlpPlugin diinisialisasi -
@@ -98,6 +226,7 @@ function setupMusic(client) {
     // Perilaku keluar voice channel sekarang diatur manual lewat event "empty" / "finish" / "disconnect"
     // di bawah (dan lewat command /stop kamu sendiri), jadi settings.music.leaveOnEmpty/leaveOnFinish/leaveOnStop
     // dipakai secara manual di dalam event handler-nya, bukan lagi lewat constructor.
+    const soundCloudPlugin = new SoundCloudPlugin();
     const distube = new DisTube(client, {
         emitNewSongOnly: true,
         savePreviousSongs: true,
@@ -116,26 +245,27 @@ function setupMusic(client) {
         },
         plugins: [
             new SpotifyPlugin(spotifyOptions),
-            new SoundCloudPlugin(),
+            soundCloudPlugin,
             // Catatan penting soal YouTube: sengaja TIDAK pakai @distube/youtube (berbasis
             // ytdl-core) di sini. Extractor berbasis ytdl-core gampang banget rusak setiap
             // YouTube ganti sesuatu di sisi mereka - gejalanya persis error
             // "Failed to find any playable formats" yang muncul di bot ini. yt-dlp (Python,
             // di-update sangat sering oleh komunitasnya) jauh lebih tahan banting, jadi link
             // & pencarian YouTube sekarang lewat YtDlpPlugin juga.
-            // `update: true` -> plugin akan cek & download/update binary yt-dlp saat bot start.
-            // PENTING (v3): sebelumnya ini di-set `false`. Kalau binary yt-dlp belum pernah
-            // ke-download sama sekali di server (VPS baru / node_modules baru), `update:false`
-            // bikin plugin TIDAK PUNYA binary sama sekali buat dijalankan -> proses yt-dlp gagal
-            // start -> outputnya bukan JSON valid -> persis gejala "eror json di konsol pas play
-            // pake link YT" yang sering dilaporkan. Trade-off `update:true` cuma nambah beberapa
-            // detik waktu start bot (buat cek versi ke GitHub), jauh lebih aman daripada binary
-            // yang hilang/ketinggalan versi. Kalau IP VPS kena rate-limit GitHub (error 403 saat
-            // start), lihat README bagian Troubleshooting untuk solusinya.
+            // Binary yt-dlp dibangun oleh pnpm saat dependency dipasang. Jangan
+            // download ulang saat startup: plugin akan menimpa wrapper lokal
+            // yang membersihkan flag deprecated sebelum output JSON dibaca.
             // YtDlpPlugin WAJIB jadi plugin TERAKHIR (dukung 900+ situs lain: YouTube, TikTok, Twitter, dsb).
-            new YtDlpPlugin({ update: true })
+            new YtDlpPlugin({ update: false })
         ]
     });
+    // Expose the same plugin instance to /play so fallback search can resolve
+    // a SoundCloud track first and then hand its canonical URL to DisTube.
+    // This avoids relying on the `scsearch:` parser inside an already-failed
+    // play attempt.
+    distube.soundCloudPlugin = soundCloudPlugin;
+    distube.reanchorMusicPanel = reanchorMusicPanel;
+    distube.updateMusicPanel = updateMusicPanel;
 
     distube
         .on("initQueue", (queue) => {
@@ -146,16 +276,9 @@ function setupMusic(client) {
         .on("playSong", async (queue, song) => {
             const guildId = queue.textChannel?.guildId || queue.id;
             clearNpInterval(guildId);
+            recordHistory(guildId, song);
 
-            let message;
-            try {
-                message = await queue.textChannel?.send({
-                    embeds: [buildNowPlayingEmbed(queue, song)],
-                    components: buildControlRows(queue)
-                });
-            } catch {
-                return;
-            }
+            const message = await updateMusicPanel(queue, song);
             if (!message) return;
 
             // (v3.1) Live-update progress bar tiap NP_UPDATE_INTERVAL_MS, selama masih
@@ -180,68 +303,32 @@ function setupMusic(client) {
             }, NP_UPDATE_INTERVAL_MS);
             npIntervals.set(guildId, interval);
         })
-        .on("addSong", (queue, song) => {
-            queue.textChannel
-                ?.send({
-                    embeds: [
-                        createSuccessEmbed(
-                            `**[${song.name}](${song.url})** \`[${song.formattedDuration}]\` ditambahkan ke antrian.\n` +
-                                `🎧 Diminta oleh: ${song.user ?? "Tidak diketahui"}`,
-                            "➕ Ditambahkan ke Antrian"
-                        )
-                    ]
-                })
-                .catch(() => {});
+        .on("addSong", async (queue, song) => {
+            logger.info(`[MUSIC] ${queue.textChannel?.guildId || queue.id}: ${song.name} masuk antrian.`);
+            await updateMusicPanel(queue, queue.songs?.[0]);
         })
-        .on("addList", (queue, playlist) => {
-            queue.textChannel
-                ?.send({
-                    embeds: [
-                        createSuccessEmbed(
-                            `**${playlist.name}** (${playlist.songs.length} lagu) ditambahkan ke antrian.`,
-                            "➕ Playlist Ditambahkan"
-                        )
-                    ]
-                })
-                .catch(() => {});
+        .on("addList", async (queue, playlist) => {
+            logger.info(`[MUSIC] ${queue.textChannel?.guildId || queue.id}: playlist ${playlist.name} (${playlist.songs.length} lagu) masuk antrian.`);
+            await updateMusicPanel(queue, queue.songs?.[0]);
         })
         .on("addRelatedSong", (queue, song) => {
-            queue.textChannel
-                ?.send({
-                    embeds: [
-                        createInfoEmbed(
-                            `Autoplay menambahkan lagu terkait: **[${song.name}](${song.url})**`,
-                            "🔁 Autoplay"
-                        )
-                    ]
-                })
-                .catch(() => {});
+            logger.info(`[MUSIC] Autoplay menambahkan lagu terkait: ${song.name}`);
         })
         .on("empty", (queue) => {
             // Catatan: sejak DisTube v5, event "empty" ini tidak lagi di-emit otomatis oleh library.
             // Deteksi channel kosong sekarang dilakukan manual lewat listener "voiceStateUpdate" di bawah,
             // yang juga sudah menghormati mode 24/7 (/247) sebelum event ini di-emit.
-            queue.textChannel
-                ?.send({
-                    embeds: [createInfoEmbed("Voice channel kosong, bot keluar dari voice channel.", "👋 Voice Channel Kosong")]
-                })
-                .catch(() => {});
+            setPanelIdle(queue.textChannel?.guildId || queue.id, "Voice channel kosong, musik dihentikan.");
         })
         .on("finish", (queue) => {
             const guildId = queue.textChannel?.guildId || queue.id;
             clearNpInterval(guildId);
 
             const guard247 = is247Enabled(guildId);
-            queue.textChannel
-                ?.send({
-                    embeds: [
-                        createInfoEmbed(
-                            `Antrian musik telah selesai diputar semua.${guard247 ? "\n\n♾️ Mode 24/7 aktif, bot tetap standby di voice channel." : ""}`,
-                            "✅ Antrian Selesai"
-                        )
-                    ]
-                })
-                .catch(() => {});
+            setPanelIdle(
+                guildId,
+                `Antrian musik selesai.${guard247 ? " Mode 24/7 aktif, bot tetap standby di voice channel." : ""}`
+            );
             // DisTube v5 tidak lagi otomatis keluar voice channel saat antrian habis,
             // jadi kita tegakkan sendiri sesuai settings.music.leaveOnFinish - kecuali
             // mode 24/7 (/247) sedang aktif di server ini, maka bot tetap standby.
@@ -252,17 +339,11 @@ function setupMusic(client) {
         .on("disconnect", (queue) => {
             const guildId = queue.textChannel?.guildId || queue.id;
             clearNpInterval(guildId);
-            queue.textChannel
-                ?.send({ embeds: [createInfoEmbed("Bot terputus dari voice channel.", "👋 Terputus")] })
-                .catch(() => {});
+            setPanelIdle(guildId, "Bot terputus dari voice channel. Panel tetap disimpan untuk pemutaran berikutnya.");
             resumeGuardIfNeeded(client, queue);
         })
         .on("noRelated", (queue) => {
-            queue.textChannel
-                ?.send({
-                    embeds: [createErrorEmbed("Tidak dapat menemukan lagu terkait untuk autoplay.", "⚠️ Autoplay Gagal")]
-                })
-                .catch(() => {});
+            setPanelIdle(queue.textChannel?.guildId || queue.id, "Autoplay tidak menemukan lagu terkait.");
         })
         .on("error", (error, queue, song) => {
             logger.error(`DisTube error: ${error?.stack || error}`);
@@ -283,11 +364,10 @@ function setupMusic(client) {
                     "\n\n💡 **Kemungkinan penyebab:** binary `yt-dlp` di server bermasalah/ketinggalan versi. Lihat README bagian **Troubleshooting: Error JSON/ENOENT saat Play Link YouTube**.";
             }
 
-            queue?.textChannel
-                ?.send({
-                    embeds: [createErrorEmbed(`Terjadi kesalahan saat memutar musik${extra}: \`${rawMessage}\`${hint}`)]
-                })
-                .catch(() => {});
+            setPanelIdle(
+                queue?.textChannel?.guildId || queue?.id,
+                `Pemutaran gagal${extra}: ${rawMessage}${hint}`
+            );
         });
 
     // DisTube v5 tidak lagi punya opsi "leaveOnEmpty" bawaan, jadi kita cek manual setiap kali

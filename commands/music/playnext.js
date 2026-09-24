@@ -1,6 +1,7 @@
 const { SlashCommandBuilder } = require("discord.js");
 const settings = require("../../settings.js");
 const { createErrorEmbed, createInfoEmbed } = require("../../utils/embeds.js");
+const { normalizeMusicQuery } = require("../../utils/musicQuery.js");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -14,7 +15,8 @@ module.exports = {
         ),
     category: "music",
     async execute(interaction) {
-        const query = interaction.options.getString("query", true);
+        const query = interaction.options.getString("query", true).trim();
+        const playerQuery = normalizeMusicQuery(query);
         const voiceChannel = interaction.member.voice?.channel;
 
         if (!voiceChannel) {
@@ -61,7 +63,7 @@ module.exports = {
         try {
             // position: 1 = taruh tepat setelah lagu yang sedang diputar (posisi 0),
             // bukan ditambahkan ke ujung antrian seperti /play biasa.
-            await distube.play(voiceChannel, query, {
+            await distube.play(voiceChannel, playerQuery, {
                 textChannel: interaction.channel,
                 member: interaction.member,
                 position: 1

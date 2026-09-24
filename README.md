@@ -129,6 +129,37 @@ Jika berhasil, akan muncul log seperti:
 6. **Khusus fitur music/YouTube di Railway:** lihat bagian *Troubleshooting* di bawah — Railway itu hosting cloud (IP data-center), jadi tetap bisa kena deteksi bot YouTube seperti hosting cloud lain. Konfigurasi default di `settings.js` (`music.youtube`) sudah disiapkan untuk kondisi ini, tidak perlu setup tambahan di Railway-nya sendiri (tidak perlu install Deno/dsb — bot otomatis pakai Node.js yang memang sudah ada di container Railway).
 7. Railway bawaannya tidak butuh port terbuka untuk bot Discord (bukan web server) — kalau Railway menampilkan warning "no exposed port", abaikan saja, itu normal untuk bot Discord.
 
+## 🔟 Cara Deploy ke Render.com
+
+Sejak versi ini, `settings.js` sudah dibuat baca `token`, `clientId`, `guildId`, `ownerIds` dari **Environment Variable** (`process.env`), bukan dari isi file — jadi kamu **tidak perlu edit `settings.js` sama sekali** untuk deploy, tinggal isi nilainya di dashboard Render.
+
+1. Push seluruh isi folder ini ke repo GitHub kamu (token TIDAK ada lagi di `settings.js`, jadi aman untuk repo publik sekalipun — tapi `database/database.json` boleh saja ikut ter-push kalau kamu memang mau begitu).
+2. Di [render.com](https://render.com) → **New** → **Web Service** → **Build and deploy from a Git repository** → pilih repo ini.
+   - Kalau repo punya `render.yaml`, Render akan menawarkan **New Blueprint Instance** — ini paling cepat, tinggal klik **Apply**.
+3. Isi konfigurasi service:
+   - **Runtime:** Node
+   - **Build Command:** `npm install`
+   - **Start Command:** `node index.js`
+   - **Instance Type:** Free (cukup untuk bot skala kecil–menengah)
+4. Di tab **Environment**, tambahkan Environment Variable berikut (ini yang dimaksud "input token & client id langsung di Render"):
+   | Key | Isi |
+   |---|---|
+   | `DISCORD_TOKEN` | Token bot dari Discord Developer Portal |
+   | `CLIENT_ID` | Application ID bot |
+   | `OWNER_IDS` | ID Discord owner, pisah koma kalau lebih dari satu |
+   | `GUILD_ID` | (opsional) ID server testing, kosongkan untuk global |
+    | `RAPIDAPI_KEY` | API key RapidAPI untuk memutar link YouTube asli lewat resolver audio |
+   | `YT_COOKIES` | (opsional, hanya kalau fitur music YouTube kena block) isi seluruh isi file `cookies.txt` asli kamu (format Netscape) |
+5. Klik **Create Web Service**. Tunggu build selesai, cek tab **Logs** — harus muncul log yang sama seperti menjalankan lokal (`Bot sudah online!`).
+6. Bot ini bukan web app, tapi Render "Web Service" (satu-satunya tipe yang gratis) tetap butuh port yang aktif supaya deploy tidak dianggap gagal — project ini sudah menambahkan server HTTP kecil (`utils/keepAlive.js`) otomatis untuk itu, tidak perlu setup tambahan.
+
+**Catatan penting soal Render free plan:**
+- Instance **Free** akan otomatis "tidur" (spin down) kalau tidak ada trafik HTTP masuk selama ±15 menit, dan bot Discord ikut offline sampai ada request baru yang membangunkannya. Kalau bot perlu online 24/7, ada dua opsi:
+  1. Pakai layanan ping gratis (misal [UptimeRobot](https://uptimerobot.com) atau [cron-job.org](https://cron-job.org)) untuk hit URL service Render kamu tiap 5–10 menit, **atau**
+  2. Upgrade ke instance berbayar (Starter, mulai ~$7/bulan) yang tidak tidur.
+- `database/database.json` di Render **tidak persisten** kalau instance restart/redeploy tanpa disk tambahan (isinya balik ke yang terakhir kamu push ke GitHub) — kamu sudah tahu soal ini, jadi cukup sebagai pengingat kalau nanti datanya "hilang" setelah redeploy.
+- Sekali lagi soal `YT_COOKIES`: isinya setara sesi login akun Google/YouTube kamu. Jangan pernah tempel di tempat publik, dan pakai akun YouTube "buangan", bukan akun pribadi.
+
 ---
 
 ## 🎵 Fitur Music (Play Musik di Voice Channel)
@@ -180,6 +211,13 @@ npm install
 | `/remove nomor` | Hapus lagu tertentu dari antrian |
 | `/filter nama` | Aktif/nonaktifkan filter audio (bassboost, nightcore, vaporwave, 8D, karaoke, echo) |
 | `/favorites list/remove/clear` | Kelola daftar lagu favorit kamu (bisa juga lewat tombol ❤️ di panel musik) |
+| `/sleeptimer set/off/status` | Hentikan musik otomatis setelah durasi tertentu |
+| `/playlist create/list/add/view/remove/delete/play` | Simpan lagu yang sedang diputar ke playlist pribadi dan putar kembali kapan saja |
+| `/queue-manage clear/move` | Hapus lagu yang menunggu atau pindahkan posisinya tanpa menghentikan lagu aktif |
+| `/history list/play/clear` | Lihat, putar ulang, atau hapus riwayat musik server |
+
+Preset efek audio seperti **Normal, Nightcore, Vaporwave, 8D, Karaoke, Echo, Pop, Soft,
+dan Treble** juga tersedia langsung di menu **More Features** pada panel musik.
 
 ### Konfigurasi (opsional)
 
@@ -278,10 +316,9 @@ Ini murni YouTube yang mendeteksi request otomatis dari IP server (server hostin
 - Kalau **masih** kena block terus setelah dua opsi di atas aktif (defaultnya sudah aktif, tidak perlu diapa-apain), satu-satunya cara yang beneran ampuh berikutnya adalah pakai **cookies** dari akun YouTube yang sudah login:
   1. Login ke YouTube pakai **akun buangan** (jangan akun pribadi/utama kamu — cookies ini setara sesi login, kalau bocor akun bisa dipakai orang lain).
   2. Export cookies pakai extension browser seperti "Get cookies.txt LOCALLY" (Chrome/Firefox), simpan sebagai file `cookies.txt`.
-  3. Upload file itu ke server bot kamu. Di Railway, cara paling gampang: commit file itu ke **repo private** (jangan public!) di path seperti `secrets/cookies.txt` lalu isi `cookiesPath` dengan path relatif itu — atau pakai **Railway Volume** kalau mau lebih aman/terpisah dari repo.
-  4. Isi `settings.js` → `music.youtube.cookiesPath` dengan path ke file itu.
-  5. **Tambahkan `cookies.txt` ke `.gitignore`** kalau repo kamu publik, supaya tidak ke-commit ke GitHub secara tidak sengaja (sudah didaftarkan di `.gitignore` bawaan project ini).
-  6. Restart bot (di Railway: tab **Deployments → Redeploy**).
+  3. Di Render, isi **Environment Variable `YT_COOKIES`** dengan seluruh isi file tersebut. Bot otomatis menulisnya ke path absolut `cookies.txt` dengan permission terbatas saat start.
+  4. **Jangan commit cookies ke GitHub**; gunakan akun YouTube khusus, bukan akun pribadi.
+  5. Restart/redeploy bot setelah mengubah variable.
 - Cookies bisa "basi" lagi kalau kamu logout dari akun itu di browser asalnya — kalau tiba-tiba error ini muncul lagi setelah lama normal, export ulang cookies-nya.
 - Kalau debug log (`YTDLP_DEBUG=1` di environment variable Railway, opsional) menyebut soal "PO Token" spesifik untuk satu client tertentu, itu tandanya perlu **PO Token provider** (`bgutil-ytdlp-pot-provider`) — ini setup lanjutan (butuh service tambahan berjalan terus), silakan buka issue/minta bantuan lebih lanjut kalau sampai ke titik ini karena setup-nya di luar cakupan config sederhana di atas.
 
@@ -289,8 +326,31 @@ Ini murni YouTube yang mendeteksi request otomatis dari IP server (server hostin
 Biasanya kombinasi dari (a) — binary belum ada/rusak — atau YouTube mengembalikan halaman HTML (block/captcha) padahal yt-dlp mengharapkan JSON, yang berarti sebenarnya ini juga gejala dari (b). Perbaiki (a) dan (b) dulu di atas.
 
 **Umum untuk ketiganya:**
-- Coba `/play` dengan **judul lagu biasa** (bukan link YouTube) — Spotify/SoundCloud tidak kena masalah ini. Kalau itu jalan normal, memang khusus YouTube-nya yang bermasalah seperti dijelaskan di atas.
+- Coba `/play` dengan **judul lagu biasa** atau link YouTube — judul biasa otomatis memakai pencarian `ytsearch1:` dan link langsung memakai extractor YouTube yang sama.
 - ⚠️ **Catatan jujur soal Replit:** Replit (terutama plan gratis) memakai IP yang dipakai bareng-bareng banyak project lain, jadi jauh lebih sering kena rate-limit GitHub *dan* block YouTube dibanding VPS pribadi. Kalau setelah semua langkah di atas masih sering error, pertimbangkan pindah hosting ke VPS (lihat bagian **8️⃣ Cara Deploy ke Pterodactyl** di README ini) — ini perbaikan yang paling permanen, bukan cuma tambal sulam.
+
+### 🔎 Pencarian judul + fallback YouTube
+
+Judul biasa otomatis diubah menjadi query `ytsearch1:` sebelum diberikan ke yt-dlp.
+Jadi `/play query:lagu galau full album 2026` benar-benar melakukan pencarian YouTube,
+bukan mencoba mencari URL dengan nama tersebut. Link YouTube tetap diproses sebagai link
+langsung. Jika jalur utama gagal atau timeout, `/play` juga mencoba resolver yt-dlp kedua.
+
+### 🔁 Fallback `youtube-dl-exec` + Timeout Guard di `/play`
+
+`/play` sekarang punya jalur kedua kalau jalur utama (`@distube/yt-dlp`) gagal atau macet:
+
+1. `distube.play()` dibungkus timeout 25 detik. Sebelumnya, kalau prosesnya macet total (bukan error, cuma diem), interaction bisa "diem selamanya" sampai token-nya expired — user ngerasa **bot sama sekali tidak merespon**. Sekarang setelah 25 detik bot berhenti nunggu dan kasih tahu status yang jelas.
+2. Untuk input YouTube (link maupun judul), kalau jalur utama gagal/timeout, bot otomatis coba ulang pakai [`youtube-dl-exec`](https://www.npmjs.com/package/youtube-dl-exec) untuk resolve direct stream URL-nya, lalu diserahkan ke DisTube untuk diputar.
+
+⚠️ **Catatan jujur:** `youtube-dl-exec`, sama seperti `@distube/yt-dlp` yang sudah dipakai bot ini, **sama-sama cuma pembungkus Node.js di atas binary `yt-dlp`**. Jadi kalau akar masalahnya YouTube nge-block IP server (gejala `Sign in to confirm you're not a bot`, dibahas lengkap di bagian Troubleshooting di atas), ganti pembungkus JS-nya **tidak otomatis menyelesaikan itu** — dua-duanya bakal kena block yang sama karena keduanya menghubungi YouTube dari IP server yang sama. Fallback ini nilainya di: (a) jalur eksekusi independen yang tetap dibungkus timeout sendiri, dan (b) kadang binary yt-dlp yang dibawa `youtube-dl-exec` beda versi dan kebetulan belum kena pola block terbaru. Kalau `/play` masih sering gagal di KEDUA metode dengan pesan `Sign in to confirm you're not a bot`, solusi yang benar-benar terbukti ampuh tetap **isi `YT_COOKIES`** (lihat bagian Troubleshooting di atas) — itu satu-satunya cara yang menghindari deteksi bot dari sisi YouTube, bukan sekadar ganti library.
+
+### 🎧 Satu bot, satu Paseban Musik
+
+Fitur musik sekarang hanya berjalan di bot utama. Setiap server memiliki satu pesan
+panel musik yang dipakai ulang: saat lagu berganti, pesan yang sama diedit, bukan
+mengirim panel baru. ID panel disimpan di database agar tetap bisa ditemukan setelah
+restart/redeploy. Tombol panel memakai tema marun-emas “Paseban Musik Majapahit”.
 
 ---
 
@@ -327,7 +387,7 @@ Biasanya kombinasi dari (a) — binary belum ada/rusak — atau YouTube mengemba
 `/balance` `/daily` `/work` `/pay` `/leaderboard`
 
 ### 🎵 Music
-`/play` `/skip` `/pause` `/resume` `/stop` `/leave` `/queue` `/nowplaying` `/volume` `/loop` `/autoplay` `/shuffle` `/remove` `/filter` `/playnext` `/replay` `/seek` `/bassboost` `/favorites` `/vcguard` `/247`
+`/play` `/skip` `/pause` `/resume` `/stop` `/leave` `/queue` `/nowplaying` `/volume` `/loop` `/autoplay` `/shuffle` `/remove` `/filter` `/playnext` `/replay` `/seek` `/bassboost` `/favorites` `/sleeptimer` `/playlist` `/queue-manage` `/history` `/vcguard` `/247`
 
 ---
 

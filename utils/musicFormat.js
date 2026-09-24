@@ -21,12 +21,12 @@ function loopLabel(mode) {
     return REPEAT_LABELS[mode] ?? "Off";
 }
 
-/** Progress bar teks sederhana untuk /nowplaying & panel musik. */
-function progressBar(current, total, size = 20) {
-    if (!total || Number.isNaN(total)) return "🔴 `LIVE`";
+/** Progress bar teks bergaya "modern" (pill/slider) untuk /nowplaying & panel musik. */
+function progressBar(current, total, size = 18) {
+    if (!total || Number.isNaN(total)) return "🔴 **LIVE**";
     const percent = Math.min(Math.max(current / total, 0), 1);
     const filled = Math.round(size * percent);
-    const bar = "▬".repeat(filled) + "🔘" + "▬".repeat(Math.max(size - filled, 0));
+    const bar = "─".repeat(Math.max(filled - 1, 0)) + "●" + "─".repeat(Math.max(size - filled, 0));
     return `\`${bar}\``;
 }
 

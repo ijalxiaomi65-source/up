@@ -42,7 +42,13 @@ const DEFAULT_GUILD = {
     // Menyimpan pesan "panel" reaction role terakhir yang dibuat bot,
     // supaya /reactionrole add tidak perlu selalu isi message_id manual.
     // Bentuk: { channelId, messageId }
-    lastReactionRolePanel: null
+    lastReactionRolePanel: null,
+
+    // Pesan panel musik tunggal per server. Disimpan agar panel yang sama
+    // dapat dipakai lagi setelah bot restart/redeploy.
+    musicPanel: null,
+    // Riwayat lagu terakhir yang diputar di server ini.
+    musicHistory: []
 };
 
 const DEFAULT_USER = {
@@ -72,7 +78,8 @@ const DEFAULT_USER = {
     stats: { huntCount: 0, cratesOpened: 0 },
 
     // ==== Music (v3) ====
-    favoriteSongs: [] // [{ name, url, addedAt }]
+    favoriteSongs: [], // [{ name, url, addedAt }]
+    playlists: {} // { "nama playlist": [{ name, url, duration, thumbnail, addedAt }] }
 };
 
 /**
@@ -168,7 +175,7 @@ function save() {
 function getGuild(guildId) {
     const db = load();
     if (!db.guilds[guildId]) {
-        db.guilds[guildId] = { ...DEFAULT_GUILD };
+        db.guilds[guildId] = JSON.parse(JSON.stringify(DEFAULT_GUILD));
         save();
         return db.guilds[guildId];
     }

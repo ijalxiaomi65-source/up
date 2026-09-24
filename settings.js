@@ -2,25 +2,39 @@
  * ============================================
  *  ZEECHEI BOT - SETTINGS.JS
  *  Semua konfigurasi bot ada di sini.
- *  JANGAN gunakan .env — semua diatur manual.
+ *
+ *  Untuk deploy di Render.com: token, clientId, guildId, dan ownerIds
+ *  diambil dari Environment Variables yang kamu isi langsung di dashboard
+ *  Render (Settings -> Environment), BUKAN ditulis di file ini. Ini supaya
+ *  token rahasia kamu tidak ikut ter-push ke GitHub.
+ *
+ *  Kalau env var-nya kosong (misal waktu run lokal), nilai fallback
+ *  di bawah ("") yang dipakai - jadi tetap bisa diisi manual juga kalau mau.
  * ============================================
  */
+const path = require("path");
 
 module.exports = {
-    // Token bot Discord kamu (dari Discord Developer Portal)
-    token: "MTU0NDg2ODQ3NDUzMzE5MTcwMA.GvIqLV.GSXFQXPHi0FQys-X8ir78VY0fOyISFpsMMBLA8",
+    // Token bot Discord kamu (dari Discord Developer Portal).
+    // Di Render, buat Environment Variable bernama DISCORD_TOKEN.
+    token: process.env.DISCORD_TOKEN || "",
 
-    // Client ID bot (dibutuhkan untuk registrasi slash command)
-    clientId: "1544868474533191700",
+    // Client ID bot (dibutuhkan untuk registrasi slash command).
+    // Di Render, buat Environment Variable bernama CLIENT_ID.
+    clientId: process.env.CLIENT_ID || "",
 
     // (Opsional) Jika diisi, command hanya register ke 1 server (instan).
     // Kosongkan ("") untuk register global (bisa sampai 1 jam propagasi).
-    guildId: "",
+    // Di Render, Environment Variable bernama GUILD_ID (opsional).
+    guildId: process.env.GUILD_ID || "",
 
-    // ID Discord owner bot (bisa lebih dari satu)
-    ownerIds: [
-        "1443804231776862228"
-    ],
+    // ID Discord owner bot (bisa lebih dari satu).
+    // Di Render, Environment Variable OWNER_IDS diisi dipisah koma,
+    // contoh: 1443804231776862228,9988776655443322
+    ownerIds: (process.env.OWNER_IDS || "1443804231776862228")
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean),
 
     botName: "Zeechei Bot",
     prefix: "/",
@@ -148,6 +162,8 @@ module.exports = {
 
     music: {
         enabled: true,
+        // Semua pemutaran memakai satu client dan satu panel per server.
+        panelColor: "#8B1E2D",
 
         // Volume default saat bot join voice channel (0-150)
         defaultVolume: 100,
@@ -190,15 +206,12 @@ module.exports = {
             // "android"/"ios" yang makin sering diminta PO Token oleh YouTube.
             playerClients: ["tv", "mweb", "android", "web"],
 
-            // (v3.1) Sejak yt-dlp 2025.11.x, YouTube WAJIB pakai JS runtime eksternal
-            // buat nyelesain "challenge" (PO Token) dari BotGuard - tanpa ini yt-dlp
-            // cuma dapat format terbatas / gampang banget kena "Sign in to confirm
-            // you're not a bot" walaupun playerClients di atas sudah diatur.
-            // Karena bot ini SENDIRI jalan di atas Node.js (termasuk di Railway),
-            // binary `node` di server SUDAH PASTI ada - jadi kita pakai itu langsung
-            // sebagai JS runtime (tidak perlu install Deno/Bun terpisah).
-            // Isi "" untuk mematikan opsi ini (tidak disarankan).
-            jsRuntime: "node",
+            // Jangan pakai JS runtime eksternal di plugin DisTube. yt-dlp memang
+            // bisa menggunakannya, tetapi runtime Node dapat menulis peringatan
+            // "Deprecated..." ke stderr; wrapper @distube/yt-dlp menggabungkan
+            // stderr ke output JSON dan kemudian gagal parse. Cookies valid +
+            // playerClients di atas sudah cukup untuk jalur utama.
+            jsRuntime: "",
 
             // (v3.1) Paksa yt-dlp pakai IPv4. Banyak hosting cloud (termasuk Railway)
             // punya IPv6 yang reputasinya lebih gampang di-flag YouTube dibanding IPv4
@@ -215,9 +228,12 @@ module.exports = {
             //   Cookies ini setara sesi login akun YouTube kamu - kalau bocor, akun bisa dipakai orang lain.
             // - Pakai akun YouTube "buangan" (bukan akun utama/pribadi kamu) khusus buat ini.
             // - Cookies bisa expired/invalid lagi kalau kamu logout dari akun itu di browser asalnya.
-            // - Di Railway: upload cookies.txt sebagai file lewat volume, atau tempel isinya
-            //   ke environment variable lalu tulis ke file saat bot start (lihat README).
-            cookiesPath: "cookies.txt"
+            // - Di Render: JANGAN commit cookies.txt ke GitHub. Tempel isi file cookies.txt
+            //   ke Environment Variable bernama YT_COOKIES di dashboard Render - bot akan
+            //   otomatis menulis ulang isinya ke cookies.txt setiap kali start (lihat index.js).
+            // Selalu absolut supaya tetap terbaca saat current working directory
+            // Render berubah.
+            cookiesPath: path.join(__dirname, "cookies.txt")
         }
     }
 };

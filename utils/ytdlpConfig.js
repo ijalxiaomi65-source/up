@@ -52,11 +52,19 @@ function ensureYtDlpConfig() {
     }
 
     if (ytConfig.cookiesPath) {
-        if (fs.existsSync(ytConfig.cookiesPath)) {
-            lines.push(`--cookies "${ytConfig.cookiesPath}"`);
+        const cookiesPath = path.isAbsolute(ytConfig.cookiesPath)
+            ? ytConfig.cookiesPath
+            : path.resolve(__dirname, "..", ytConfig.cookiesPath);
+        const hasCookieRows = fs.existsSync(cookiesPath) &&
+            fs.readFileSync(cookiesPath, "utf8")
+                .split(/\r?\n/)
+                .some((line) => line && !line.startsWith("#") && line.split("\t").length >= 7);
+        if (hasCookieRows) {
+            lines.push(`--cookies "${cookiesPath}"`);
+            logger.info(`yt-dlp cookies aktif (${fs.statSync(cookiesPath).size} bytes).`);
         } else {
             logger.warn(
-                `settings.music.youtube.cookiesPath diisi ("${ytConfig.cookiesPath}") tapi file-nya tidak ditemukan - cookies TIDAK dipakai.`
+                `cookies.txt kosong/tidak valid di "${cookiesPath}" - yt-dlp berjalan tanpa cookies.`
             );
         }
     }
