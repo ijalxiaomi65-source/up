@@ -1,6 +1,7 @@
 const { isDeepStrictEqual } = require("node:util");
 const { randomUUID } = require("node:crypto");
 const { databaseClient } = require("../client");
+const { databaseError } = require("../databaseError");
 const tables = require("../runtimeTables.json");
 const { normalizeLegacy } = require("../../../database/migration/normalizeLegacy");
 const project = (row, columns) => Object.fromEntries(columns.map((key) => [key, row[key]]));
@@ -53,8 +54,8 @@ class RuntimeRepository {
         this.closed = false;
     }
     async rpc(name, args) {
-        const { data, error } = await this.client.rpc(name, args);
-        if (error) throw new Error(`Database ${name} failed`, { cause: error });
+        const { data, error, status } = await this.client.rpc(name, args);
+        if (error) throw databaseError(name, error, status);
         return data;
     }
     async initialize() {
