@@ -35,6 +35,15 @@ npm run db:migrate
 npm run db:validate
 ```
 
+On a host without a command shell, after applying both SQL files, explicitly set
+`MIGRATE_LEGACY_ON_START=true` for the first deployment. `npm start` imports and
+verifies the retained `database/database.json` before starting Discord. Startup
+stops if import or verification fails. An existing `legacy_imports` receipt skips
+the bootstrap import so later restarts never restore old balances. Set this flag
+back to `false` after success. The ordinary migration commands remain available.
+Copy the private migration report and backup out of ephemeral hosting storage
+when needed; Supabase also retains the original snapshot and import receipt.
+
 Import is atomic and fingerprint-idempotent; primary-key conflicts roll everything
 back. It never overwrites existing accounts. Verify the generated report, every
 row count, balances/bank, inventory/animals/pets/quests, relationships, favorites,

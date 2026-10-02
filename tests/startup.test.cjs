@@ -76,3 +76,47 @@ test("launcher fails closed by default and delegates to the bot only with comple
     const ready = load("scripts/start.js", { "../index.js": application }, { process: runtime });
     assert.equal(ready.start(), application);
 });
+
+test("opt-in migration must finish before bot load and failure prevents Discord startup", async () => {
+    let finish;
+    let loads = 0;
+    const runtime = {
+        env: {
+            DISCORD_TOKEN: "synthetic",
+            CLIENT_ID: "synthetic",
+            OWNER_IDS: "synthetic",
+            DATABASE_BACKEND: "supabase",
+            SUPABASE_URL: "synthetic",
+            SUPABASE_SERVICE_ROLE_KEY: "synthetic",
+            MIGRATE_LEGACY_ON_START: "true",
+        },
+        loadEnvFile() {},
+    };
+    const overrides = {
+        "../database/migration/bootstrap": {
+            bootstrap: () =>
+                new Promise((resolve) => {
+                    finish = resolve;
+                }),
+        },
+        get "../index.js"() {
+            loads++;
+            return "application";
+        },
+    };
+    const launcher = load("scripts/start.js", overrides, { process: runtime, console: { info() {} } });
+    const pending = launcher.start();
+    assert.equal(loads, 0);
+    finish({ status: "migrated", verified: true });
+    assert.equal(await pending, "application");
+    assert.equal(loads, 1);
+    overrides["../database/migration/bootstrap"] = {
+        bootstrap: async () => {
+            throw new Error("verification failed");
+        },
+    };
+    await assert.rejects(launcher.start(), /verification failed/);
+    assert.equal(loads, 1);
+    runtime.env.DATABASE_BACKEND = "legacy";
+    assert.throws(() => launcher.start(), /requires DATABASE_BACKEND=supabase/);
+});

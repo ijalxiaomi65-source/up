@@ -74,7 +74,22 @@ function start() {
         if (error.code !== "ENOENT") throw error;
     }
     const missing = missingConfiguration();
-    if (!missing.length) return require("../index.js");
+    if (!missing.length) {
+        if (process.env.MIGRATE_LEGACY_ON_START === "true") {
+            const backend =
+                process.env.DATABASE_BACKEND ||
+                (process.env.NODE_ENV === "production" ? "supabase" : "legacy");
+            if (backend !== "supabase")
+                throw new Error("MIGRATE_LEGACY_ON_START requires DATABASE_BACKEND=supabase");
+            return require("../database/migration/bootstrap")
+                .bootstrap()
+                .then((result) => {
+                    console.info(JSON.stringify({ service: "migration", ...result }));
+                    return require("../index.js");
+                });
+        }
+        return require("../index.js");
+    }
     // The setup landing page must be explicitly enabled by the service owner.
     if (process.env.SETUP_MODE !== "true") {
         console.error(`Missing configuration: ${missing.join(", ")}`);
@@ -94,5 +109,13 @@ function start() {
         });
     return server;
 }
-if (require.main === module) start();
+if (require.main === module) {
+    Promise.resolve()
+        .then(start)
+        .catch((error) => {
+            // Migration diagnostics contain fixed guidance, never provider payloads.
+            console.error(`Startup failed: ${error.message}`);
+            process.exitCode = 1;
+        });
+}
 module.exports = { missingConfiguration, createSetupServer, start };

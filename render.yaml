@@ -49,9 +49,9 @@ services:
       - key: LAVALINK_SECURE
         sync: false
       - key: WEB_URL
-        value: https://zeechei-v4-dashboard.onrender.com
+        sync: false
       - key: DISCORD_REDIRECT_URI
-        value: https://zeechei-v4-dashboard.onrender.com/api/auth/callback
+        sync: false
       - key: DISCORD_CLIENT_SECRET
         sync: false
       - key: SESSION_SECRET
