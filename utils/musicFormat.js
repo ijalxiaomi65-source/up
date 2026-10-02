@@ -5,16 +5,10 @@
  */
 const REPEAT_LABELS = ["Off", "Lagu Ini", "Semua Antrian"];
 
-/**
- * Preset filter bass boost. DisTube v5 default cuma `bass=g=10` yang kurang
- * "nendang" (makanya kedengaran cempreng/tipis). `dynaudnorm` ditambahkan
- * biar bass yang dinaikin ga bikin suara pecah/clipping di gain tinggi.
- */
+// Lavalink equalizer gains, limited below the API maximum.
 const BASS_BOOST_PRESETS = {
-    rendah: { label: "Rendah", value: "bass=g=12:f=100:w=0.6,dynaudnorm=f=200:g=10" },
-    sedang: { label: "Sedang", value: "bass=g=20:f=100:w=0.6,dynaudnorm=f=200:g=12" },
-    tinggi: { label: "Tinggi", value: "bass=g=28:f=100:w=0.6,dynaudnorm=f=200:g=15" },
-    ekstra: { label: "Ekstra", value: "bass=g=36:f=100:w=0.6,dynaudnorm=f=150:g=18" }
+    rendah: { label: "Rendah", value: 0.1 }, sedang: { label: "Sedang", value: 0.2 },
+    tinggi: { label: "Tinggi", value: 0.35 }, ekstra: { label: "Ekstra", value: 0.5 }
 };
 
 function loopLabel(mode) {

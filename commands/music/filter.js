@@ -17,7 +17,12 @@ module.exports = {
                     { name: "Vaporwave", value: "vaporwave" },
                     { name: "8D", value: "8d" },
                     { name: "Karaoke", value: "karaoke" },
-                    { name: "Echo", value: "echo" },
+                    { name: "Tremolo", value: "tremolo" },
+                    { name: "Vibrato", value: "vibrato" },
+                    { name: "Lowpass", value: "lowpass" },
+                    { name: "Rotation", value: "rotation" },
+                    { name: "Distortion", value: "distortion" },
+                    { name: "Equalizer", value: "equalizer" },
                     { name: "Pop (bass + treble)", value: "pop" },
                     { name: "Soft / Muffled", value: "soft" },
                     { name: "Treble Boost", value: "treble" },
@@ -38,16 +43,16 @@ module.exports = {
 
         try {
             if (name === "off") {
-                queue.filters.clear();
+                await queue.filters.clear();
                 return interaction.reply({ embeds: [createSuccessEmbed("Semua filter audio dimatikan.", "🎛️ Filter")] });
             }
 
             if (queue.filters.has(name)) {
-                queue.filters.remove(name);
+                await queue.filters.remove(name);
                 return interaction.reply({ embeds: [createSuccessEmbed(`Filter **${name}** dimatikan.`, "🎛️ Filter")] });
             }
 
-            queue.filters.add(name);
+            await queue.filters.add(name);
             await interaction.reply({ embeds: [createSuccessEmbed(`Filter **${name}** diaktifkan.`, "🎛️ Filter")] });
         } catch (err) {
             await interaction.reply({

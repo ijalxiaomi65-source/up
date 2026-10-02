@@ -11,10 +11,7 @@ module.exports = {
             return interaction.reply({ embeds: [createErrorEmbed(check.reason)], ephemeral: true });
         }
 
-        const queue = await requireQueue(interaction);
-        if (!queue) return;
-
-        await queue.stop();
+        await interaction.client.music.leave(interaction.guildId);
         await interaction.reply({ embeds: [createSuccessEmbed("Bot keluar dari voice channel.", "👋 Leave")] });
     }
 };

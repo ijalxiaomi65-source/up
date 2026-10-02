@@ -26,7 +26,7 @@ module.exports = {
         const sub = interaction.options.getSubcommand();
 
         if (sub === "off") {
-            const wasActive = stopGuard(interaction.guildId);
+            const wasActive = await stopGuard(interaction.guildId);
             db.updateGuild(interaction.guildId, { vcGuard: { enabled: false, channelId: "", textChannelId: "" } });
 
             return interaction.reply({

@@ -22,7 +22,7 @@ module.exports = {
         if (!queue) return;
 
         if (interaction.options.getSubcommand() === "clear") {
-            const removed = queue.songs.splice(1);
+            const removed = await queue.clear();
             if (!removed.length) {
                 return interaction.reply({ embeds: [createInfoEmbed("Belum ada lagu lain yang menunggu di antrian.", "🧹 Queue Management")], ephemeral: true });
             }
@@ -43,8 +43,7 @@ module.exports = {
             return interaction.reply({ embeds: [createInfoEmbed("Posisi lagu sudah sama.", "↔️ Queue Management")], ephemeral: true });
         }
 
-        const [song] = queue.songs.splice(from, 1);
-        queue.songs.splice(to, 0, song);
+        const song = await queue.move(from, to);
         await interaction.client.distube?.updateMusicPanel?.(queue, queue.songs[0]);
         return interaction.reply({ embeds: [createSuccessEmbed(`**${song.name}** dipindahkan dari nomor **${from}** ke **${to}**.`, "↔️ Antrian Diubah")] });
     }

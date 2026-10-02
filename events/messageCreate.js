@@ -7,63 +7,6 @@ const { ansiBlock, dc } = require("../utils/colors.js");
 const logger = require("../utils/logger.js");
 const { handlePrefixMessage } = require("../handlers/prefixCommandHandler.js");
 
-// State anti-spam in-memory: userId -> array of timestamps
-const messageTimestamps = new Map();
-
-function checkSpam(userId) {
-    const now = Date.now();
-    const windowMs = settings.antiSpam.intervalSeconds * 1000;
-    const timestamps = (messageTimestamps.get(userId) || []).filter((t) => now - t < windowMs);
-    timestamps.push(now);
-    messageTimestamps.set(userId, timestamps);
-    return timestamps.length > settings.antiSpam.maxMessages;
-}
-
-function checkExcessiveCaps(content) {
-    if (content.length < 10) return false;
-    const letters = content.replace(/[^a-zA-Z]/g, "");
-    if (letters.length < 10) return false;
-    const caps = letters.replace(/[^A-Z]/g, "");
-    return (caps.length / letters.length) * 100 >= settings.antiSpam.maxCapsPercent;
-}
-
-async function handleAntiSpam(message) {
-    if (!settings.antiSpam.enabled) return false;
-    if (isModerator(message.member)) return false;
-
-    const violations = [];
-    if (checkSpam(message.author.id)) violations.push("mengirim pesan terlalu cepat (spam)");
-    if (message.mentions.users.size > settings.antiSpam.maxMentions) violations.push("mention spam");
-    if (checkExcessiveCaps(message.content)) violations.push("terlalu banyak huruf kapital");
-
-    if (violations.length === 0) return false;
-
-    try {
-        if (message.member?.moderatable) {
-            await message.member.timeout(
-                settings.antiSpam.muteMinutes * 60 * 1000,
-                `Anti-spam: ${violations.join(", ")}`
-            );
-        }
-        await message.channel.send({
-            embeds: [
-                createWarningEmbed(
-                    `${message.author} terkena timeout ${settings.antiSpam.muteMinutes} menit karena: ${violations.join(", ")}.`,
-                    "🛡️ Anti-Spam"
-                )
-            ]
-        });
-        await logger.sendLog(
-            message.client,
-            message.guild.id,
-            createWarningEmbed(`**User:** ${message.author.tag}\n**Alasan:** ${violations.join(", ")}`, "🛡️ Anti-Spam Action")
-        );
-    } catch (err) {
-        logger.error(`Anti-spam action gagal: ${err.message}`);
-    }
-    return true;
-}
-
 function xpForLevel(level) {
     return 5 * (level ** 2) + 50 * level + 100;
 }
@@ -143,10 +86,10 @@ module.exports = {
     once: false,
     async execute(message) {
         try {
-            if (message.author.bot || !message.guild) return;
-
-            const wasSpam = await handleAntiSpam(message);
-            if (wasSpam) return;
+            if (!message.guild) return;
+            const wasSpam = await require("../src/services/automod/AutoMod").handleMessage(message);
+            if (wasSpam || message.author.bot) return;
+            require("../src/services/tickets/ticketService").activity(message);
 
             // Z-command (prefixless text command) — dicek SEBELUM AFK/leveling.
             // Jika pesan adalah command yang valid, hentikan di sini (tidak perlu AFK check / XP leveling).

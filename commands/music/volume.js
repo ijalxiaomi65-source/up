@@ -24,7 +24,7 @@ module.exports = {
             return interaction.reply({ embeds: [createErrorEmbed(check.reason)], ephemeral: true });
         }
 
-        queue.setVolume(level);
+        await queue.setVolume(level);
         await interaction.reply({ embeds: [createSuccessEmbed(`Volume diatur ke \`${level}%\`.`, "🔊 Volume")] });
     }
 };

@@ -1,149 +1,59 @@
-/**
- * ============================================
- *  MUSIC PANEL (v3)
- *  Embed + tombol interaktif untuk "Now Playing", terinspirasi dari
- *  panel bot musik populer (play/pause, skip, favorite, more features).
- * ============================================
- */
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require("discord.js");
-const settings = require("../settings.js");
-const { baseEmbed } = require("./embeds.js");
-const { loopLabel, progressBar } = require("./musicFormat.js");
-
-const MUSIC_EFFECT_OPTIONS = [
-    { label: "Normal — Matikan Semua Efek", value: "effect_off", emoji: "🎵" },
-    { label: "Nightcore", value: "effect_nightcore", emoji: "⚡" },
-    { label: "Vaporwave", value: "effect_vaporwave", emoji: "🌌" },
-    { label: "8D Audio", value: "effect_8d", emoji: "🌀" },
-    { label: "Karaoke", value: "effect_karaoke", emoji: "🎤" },
-    { label: "Echo", value: "effect_echo", emoji: "🏛️" },
-    { label: "Pop", value: "effect_pop", emoji: "✨" },
-    { label: "Soft / Muffled", value: "effect_soft", emoji: "🌙" },
-    { label: "Treble Boost", value: "effect_treble", emoji: "📈" }
-];
-
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, escapeMarkdown } = require("discord.js");
+const { MusicEmojiManager } = require("../src/music/MusicEmojiManager.js");
+const theme = require("../src/music/MusicTheme.js");
+const { progressBar } = require("./musicFormat.js");
+const safeUrl = value => { try { const url = new URL(value); return ["http:", "https:"].includes(url.protocol) ? url.href : null; } catch { return null; } };
+const text = (value, max = 256) => escapeMarkdown(String(value || "Unknown track").slice(0, max));
+const emojiFor = queue => new MusicEmojiManager({ guild: queue?.textChannel?.guild, channel: queue?.textChannel, overrides: queue?.manager?.repository.getDB?.().stats?.musicEmojis || {} });
 function buildNowPlayingEmbed(queue, song) {
-    const current = queue.formattedCurrentTime ?? "00:00";
-    const total = song.formattedDuration ?? "??:??";
-    const bar = progressBar(queue.currentTime, song.duration);
-    const requester = song.user;
+    const emoji = emojiFor(queue);
+    const artist = song.uploader?.name || song.artist || "";
+    const unavailable = queue.player?.node && queue.player.node.state !== require("shoukaku").Constants.State.CONNECTED;
+    const status = queue.loading ? `${emoji.getLoadingEmoji()} LOADING` : unavailable ? `${emoji.getLoadingEmoji()} RECONNECTING` : queue.paused ? `${emoji.getPauseEmoji()} PAUSED` : `${emoji.getPlayingEmoji()} PLAYING`;
+    const embed = new EmbedBuilder().setColor(queue.paused ? theme.muted : theme.accent)
+        .setAuthor({ name: theme.brand }).setTitle(String(song.name || "Unknown track").slice(0, 256))
+        .setDescription(`${status}\n${artist ? `**${text(artist, 180)}**\n\n` : "\n"}` +
+            `${queue.formattedCurrentTime || "00:00"}  ${progressBar(queue.currentTime || 0, song.duration)}  ${song.formattedDuration || "LIVE"}\n\n` +
+            `${emoji.getVolumeEmoji()} ${queue.volume}%   ·   ${Math.max(0, (queue.songs?.length || 1) - 1)} queued   ·   Loop ${theme.loops[queue.repeatMode] || "Off"}`)
+        .setFooter({ text: `Requested by ${String(song.user?.displayName || song.user?.username || "a listener").slice(0, 80)} · Autoplay ${queue.autoplay ? "on" : "off"}` });
+    const url = safeUrl(song.url), image = safeUrl(song.thumbnail);
+    if (url) embed.setURL(url);
+    if (image) embed.setImage(image);
 
-    return baseEmbed(settings.music.panelColor || settings.colors.primary)
-        .setAuthor({ name: queue.paused ? "⏸️ Paseban Dijeda" : "🎶 Paseban Musik Majapahit" })
-        .setTitle(`🎵 ${song.name}`)
-        .setURL(song.url)
-        .setDescription(
-            `**${queue.paused ? "Musik sedang dijeda" : "Sedang diputar di paseban"}**\n\n` +
-            `${bar}  \`${current} / ${total}\`\n` +
-            `Panel ini selalu dipindah ke bawah setiap ada request lagu baru.`
-        )
-        .addFields(
-            { name: "🔊 Gending", value: `\`${queue.volume}%\``, inline: true },
-            { name: "🔁 Ulang", value: `\`${loopLabel(queue.repeatMode)}\``, inline: true },
-            { name: "♾️ Autoplay", value: `\`${queue.autoplay ? "Aktif" : "Nonaktif"}\``, inline: true },
-            { name: "📜 Antrian", value: `\`${queue.songs?.length ?? 1} lagu\``, inline: true },
-            { name: "👑 Diminta oleh", value: requester ? `${requester}` : "`Tidak diketahui`", inline: false }
-        )
-        .setImage(song.thumbnail || null)
-        .setFooter({
-            text: requester ? `Diminta oleh ${requester.displayName ?? requester.username ?? requester}` : settings.botName,
-            iconURL: requester?.displayAvatarURL?.() ?? undefined
-        })
-        .setTimestamp();
+    return embed;
 }
-
-function buildIdleMusicEmbed(reason = "Belum ada lagu yang diputar.") {
-    return baseEmbed(settings.music.panelColor || settings.colors.primary)
-        .setAuthor({ name: "🏯 Paseban Musik Majapahit" })
-        .setTitle("🎶 Panel Musik Siap")
-        .setDescription(
-            `**${reason}**\n\n` +
-            "Panel ini dipakai ulang untuk lagu berikutnya. Gunakan `/play` dengan judul atau link YouTube."
-        )
-        .addFields(
-            { name: "🎼 Cara mulai", value: "`/play query:judul lagu`", inline: true },
-            { name: "🏯 Mode", value: "Satu panel • satu bot", inline: true }
-        )
-        .setFooter({ text: `${settings.botName} • Paseban Musik` })
-        .setTimestamp();
+function buildIdleMusicEmbed(reason = "Your next listening session starts here.") {
+    return new EmbedBuilder().setColor(theme.muted).setAuthor({ name: theme.brand })
+        .setTitle("Nothing is playing")
+        .setDescription(`${reason}\n\nUse **/play** with a song, artist, or link.`)
+        .setFooter({ text: "One server. One shared listening space." });
 }
-
-/**
- * 5 baris kontrol yang mengikuti panel musik pada screenshot:
- * playback utama, audio/queue, fitur tambahan, Stop, lalu More Features.
- * Semua customId diawali "music_" supaya gampang di-routing di buttonHandler/selectMenuHandler.
- */
 function buildControlRows(queue) {
-    const noQueue = !queue || !queue.songs?.length;
-    const noPrevious = noQueue || !queue.previousSongs?.length;
-    const noNext = noQueue || (queue.songs.length <= 1 && !queue.autoplay);
-    const noVolDown = noQueue || queue.volume <= 0;
-    const noVolUp = noQueue || queue.volume >= 150;
-
-    // Baris 1: playback utama.
-    const row1 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId("music_prev").setEmoji("⏮️").setLabel("Sebelum").setStyle(ButtonStyle.Primary).setDisabled(noPrevious),
-        new ButtonBuilder()
-            .setCustomId("music_playpause")
-            .setEmoji(queue?.paused ? "▶️" : "⏸️")
-            .setLabel(queue?.paused ? "Putar" : "Jeda")
-            .setStyle(ButtonStyle.Primary)
-            .setDisabled(noQueue),
-        new ButtonBuilder().setCustomId("music_skip").setEmoji("⏭️").setLabel("Berikutnya").setStyle(ButtonStyle.Primary).setDisabled(noNext),
-        new ButtonBuilder()
-            .setCustomId("music_loop")
-            .setEmoji("🔁")
-            .setLabel("Ulang")
-            .setStyle(queue?.repeatMode ? ButtonStyle.Success : ButtonStyle.Primary)
-            .setDisabled(noQueue)
+    const active = Boolean(queue?.songs?.length), emoji = emojiFor(queue);
+    const button = (id, label, icon, style = ButtonStyle.Secondary, disabled = !active) => new ButtonBuilder()
+        .setCustomId(`music_${id}`).setLabel(label).setEmoji(emoji.get(icon)).setStyle(style).setDisabled(disabled);
+    const primary = new ActionRowBuilder().addComponents(
+        button("prev", "Previous", "previous", ButtonStyle.Secondary, !active || !queue?.previousSongs?.length),
+        button("playpause", queue?.paused ? "Resume" : "Pause", queue?.paused ? "play" : "pause", ButtonStyle.Primary),
+        button("skip", "Next", "next", ButtonStyle.Secondary, !active || (queue.songs.length < 2 && !queue.autoplay))
     );
-
-    // Baris 2: favorit, antrean, volume, dan acak.
-    const row2 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId("music_fav").setEmoji("❤️").setLabel("Favorit").setStyle(ButtonStyle.Danger).setDisabled(noQueue),
-        new ButtonBuilder().setCustomId("music_queue").setEmoji("📜").setLabel("Antrian").setStyle(ButtonStyle.Primary).setDisabled(noQueue),
-        new ButtonBuilder().setCustomId("music_voldown").setEmoji("🔉").setLabel("Volume −").setStyle(ButtonStyle.Primary).setDisabled(noVolDown),
-        new ButtonBuilder().setCustomId("music_volup").setEmoji("🔊").setLabel("Volume +").setStyle(ButtonStyle.Primary).setDisabled(noVolUp),
-        new ButtonBuilder().setCustomId("music_shuffle").setEmoji("🔀").setLabel("Acak").setStyle(ButtonStyle.Primary).setDisabled(noQueue)
+    const secondary = new ActionRowBuilder().addComponents(
+        button("queue", "Queue", "queue"), button("fav", "Favorite", "heart"), button("shuffle", "Shuffle", "shuffle"),
+        button("loop", `Loop: ${theme.loops[queue?.repeatMode] || "Off"}`, "loop", queue?.repeatMode ? ButtonStyle.Success : ButtonStyle.Secondary),
+        button("volume", `${queue?.volume ?? 100}%`, "volume")
     );
-
-    // Baris 3: fitur tambahan seperti pada screenshot.
-    const row3 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId("music_autoplay")
-            .setEmoji("♾️")
-            .setLabel("Autoplay")
-            .setStyle(queue?.autoplay ? ButtonStyle.Success : ButtonStyle.Primary)
-            .setDisabled(noQueue),
-        new ButtonBuilder().setCustomId("music_replay").setEmoji("⏱️").setLabel("Replay").setStyle(ButtonStyle.Primary).setDisabled(noQueue),
-        new ButtonBuilder()
-            .setCustomId("music_bassboost")
-            .setEmoji("🎚️")
-            .setLabel("Bass Boost")
-            .setStyle(queue?.filters?.has?.("bassboost") ? ButtonStyle.Success : ButtonStyle.Primary)
-            .setDisabled(noQueue),
-        new ButtonBuilder().setCustomId("music_disconnect").setEmoji("🔌").setLabel("Keluar VC").setStyle(ButtonStyle.Primary).setDisabled(noQueue)
-    );
-
-    // Baris 4: Stop dibuat sendiri agar lebih menonjol dan mudah ditemukan.
-    const row4 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId("music_stop").setEmoji("⏹️").setLabel("Stop").setStyle(ButtonStyle.Danger).setDisabled(noQueue)
-    );
-
-    // Baris 5: fitur yang butuh teks/hasil panjang.
-    const row5 = new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-            .setCustomId("music_more_menu")
-            .setPlaceholder("✨ More Features...")
-            .setDisabled(noQueue)
-            .addOptions(
-                { label: "Lirik Lagu Ini", value: "lyrics", emoji: "📝" },
-                { label: "Favorit Saya", value: "favorites", emoji: "⭐" },
-                ...MUSIC_EFFECT_OPTIONS
-            )
-    );
-
-    return [row1, row2, row3, row4, row5];
+    const more = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId("music_more_menu")
+        .setPlaceholder(`More controls · Autoplay ${queue?.autoplay ? "on" : "off"}`).setDisabled(!active).addOptions(
+            ...[ { label: "Lyrics", value: "lyrics" }, { label: "My favorites", value: "favorites" },
+            { label: "Replay", value: "action:replay" }, { label: "Toggle autoplay", value: "action:autoplay" },
+            { label: "Stop playback", value: "action:stop" }, { label: "Disconnect", value: "action:disconnect" },
+            { label: "Audio: Normal", value: "effect_off" }, { label: "Audio: Bassboost", value: "effect_bassboost" },
+            { label: "Audio: Nightcore", value: "effect_nightcore" }, { label: "Audio: Vaporwave", value: "effect_vaporwave" },
+            { label: "Audio: 8D", value: "effect_8d" }, { label: "Audio: Karaoke", value: "effect_karaoke" },
+            { label: "Audio: Pop", value: "effect_pop" }, { label: "Audio: Soft", value: "effect_soft" },
+            { label: "Audio: Treble", value: "effect_treble" }, { label: "Audio: Tremolo", value: "effect_tremolo" }, { label: "Audio: Vibrato", value: "effect_vibrato" }
+            ].filter(option => !option.value.startsWith("effect_") || option.value === "effect_off" || !queue?.filters?.supports || queue.filters.supports(option.value.slice(7)))
+        ));
+    return [primary, secondary, more];
 }
-
-module.exports = { buildNowPlayingEmbed, buildIdleMusicEmbed, buildControlRows };
+module.exports = { buildNowPlayingEmbed, buildIdleMusicEmbed, buildControlRows, safeUrl };

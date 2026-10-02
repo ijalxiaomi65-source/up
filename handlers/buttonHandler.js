@@ -19,7 +19,7 @@ async function handleButton(interaction, client) {
 
     if (id.startsWith("music_")) return handleMusicButton(interaction);
 
-    if (id === "ticket_create") return handleTicketCreate(interaction);
+    if (id === "ticket_create" || (id.startsWith("ticket_") && db.getDB().tickets[interaction.channelId])) return require("../src/services/tickets/ticketService").handle(interaction);
     if (id === "ticket_close") return handleTicketClose(interaction, client);
     if (id === "ticket_transcript") return handleTicketTranscript(interaction, client);
 
@@ -37,86 +37,9 @@ async function handleButton(interaction, client) {
 
 // ---------------- TICKET SYSTEM ----------------
 
-async function handleTicketCreate(interaction) {
-    const guild = interaction.guild;
-    const existing = guild.channels.cache.find(
-        (c) => c.name === `ticket-${interaction.user.username}`.toLowerCase()
-    );
-    if (existing) {
-        return interaction.reply({
-            embeds: [createErrorEmbed(`Kamu sudah punya ticket aktif di ${existing}.`)],
-            ephemeral: true
-        });
-    }
-
-    const overwrites = [
-        { id: guild.roles.everyone.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-        {
-            id: interaction.user.id,
-            allow: [
-                PermissionsBitField.Flags.ViewChannel,
-                PermissionsBitField.Flags.SendMessages,
-                PermissionsBitField.Flags.ReadMessageHistory
-            ]
-        },
-        {
-            id: client_botId(interaction),
-            allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages]
-        }
-    ];
-
-    for (const roleId of settings.ticket.supportRoleIds) {
-        if (guild.roles.cache.has(roleId)) {
-            overwrites.push({
-                id: roleId,
-                allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages]
-            });
-        }
-    }
-
-    try {
-        const channel = await guild.channels.create({
-            name: `ticket-${interaction.user.username}`.toLowerCase(),
-            type: ChannelType.GuildText,
-            parent: settings.ticket.categoryId || null,
-            permissionOverwrites: overwrites
-        });
-
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId("ticket_close").setLabel("Close Ticket").setEmoji("🔒").setStyle(ButtonStyle.Danger),
-            new ButtonBuilder().setCustomId("ticket_transcript").setLabel("Transcript").setEmoji("📄").setStyle(ButtonStyle.Secondary)
-        );
-
-        await channel.send({
-            content: `${interaction.user}`,
-            embeds: [
-                createInfoEmbed(
-                    `Halo ${interaction.user}, tim support akan segera membantumu.\nJelaskan kendalamu di sini.`,
-                    "🎫 Ticket Dibuka"
-                )
-            ],
-            components: [row]
-        });
-
-        await interaction.reply({
-            embeds: [createSuccessEmbed(`Ticket kamu dibuat di ${channel}.`)],
-            ephemeral: true
-        });
-    } catch (err) {
-        logger.error(`Gagal membuat ticket: ${err.message}`);
-        await interaction.reply({
-            embeds: [createErrorEmbed("Gagal membuat ticket. Pastikan bot memiliki permission `Manage Channels`.")],
-            ephemeral: true
-        });
-    }
-}
-
-function client_botId(interaction) {
-    return interaction.client.user.id;
-}
-
+// Existing legacy ticket channels still allow staff close/transcript. New tickets use ticketService.
 async function handleTicketClose(interaction, client) {
-    if (!isModerator(interaction.member) && interaction.channel.name !== `ticket-${interaction.user.username}`.toLowerCase()) {
+    if (!isModerator(interaction.member)) {
         return interaction.reply({
             embeds: [createErrorEmbed("Kamu tidak punya izin menutup ticket ini.")],
             ephemeral: true

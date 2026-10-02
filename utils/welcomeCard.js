@@ -90,7 +90,9 @@ async function generateCard(member, type = "join") {
 
         try {
             const avatarUrl = member.user.displayAvatarURL({ extension: "png", size: 256 });
-            const avatarImg = await loadImage(avatarUrl);
+            const response = await fetch(avatarUrl, { signal: AbortSignal.timeout(5000) });
+            if (!response.ok) throw new Error("Avatar unavailable");
+            const avatarImg = await loadImage(Buffer.from(await response.arrayBuffer()));
 
             // Ring luar
             ctx.save();

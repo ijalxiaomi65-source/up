@@ -18,7 +18,7 @@ module.exports = {
             return interaction.reply({ embeds: [createWarningEmbed("Musik memang sudah dijeda.")], ephemeral: true });
         }
 
-        queue.pause();
+        await queue.pause();
         await interaction.reply({ embeds: [createSuccessEmbed("Musik dijeda. Gunakan `/resume` untuk melanjutkan.", "⏸️ Pause")] });
     }
 };

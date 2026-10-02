@@ -34,15 +34,13 @@ module.exports = {
 
         try {
             if (level === "off") {
-                if (queue.filters.has("bassboost")) queue.filters.remove("bassboost");
+                if (queue.filters.has("bassboost")) await queue.filters.remove("bassboost");
                 return interaction.reply({ embeds: [createSuccessEmbed("Bass boost dimatikan.", "🔊 Bass Boost")] });
             }
 
             const preset = BASS_BOOST_PRESETS[level];
-            // Pakai object {name, value} langsung (bukan cuma nama string) supaya gain-nya
-            // benar-benar override preset "bassboost" bawaan, override: true biar bisa ganti
-            // level berkali-kali di tengah lagu yang sama tanpa perlu /filter off dulu.
-            queue.filters.add({ name: "bassboost", value: preset.value }, true);
+            // Equalizer gain is validated by the Lavalink filter service.
+            await queue.filters.add({ name: "bassboost", value: preset.value }, true);
 
             await interaction.reply({
                 embeds: [

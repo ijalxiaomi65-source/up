@@ -36,15 +36,9 @@ module.exports = {
         }
 
         // Escrow bet SEBELUM game dimulai (mencegah exploit balance negatif / double transaction)
-        const escrowed = economy.removeBalance(userId, parsed.amount);
-        if (!escrowed) {
-            return message.reply({ embeds: [createErrorEmbed("❌ Saldo cash kamu tidak cukup.")] });
-        }
-
         const result = await blackjackController.startGame(message, userId, parsed.amount);
         if (!result.ok) {
             // Gagal mulai (misal sudah ada sesi aktif) -> refund escrow
-            economy.addBalance(userId, parsed.amount);
             return message.reply({ embeds: [createErrorEmbed(result.error)] });
         }
     }

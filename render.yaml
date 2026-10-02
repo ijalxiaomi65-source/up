@@ -1,25 +1,40 @@
 services:
-  # Satu service untuk satu bot utama. Fitur musik ikut berjalan di bot ini,
-  # jadi tidak perlu token bot musik tambahan.
   - type: web
-    name: zeechei-discord-bot
+    name: zeechei-v4
     runtime: node
-    plan: free
-    buildCommand: npm install
-    startCommand: node index.js
-    healthCheckPath: /
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /health
     envVars:
       - key: NODE_VERSION
         value: 22.12.0
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_BACKEND
+        value: supabase
+      - key: WEB_ENABLED
+        value: "true"
       - key: DISCORD_TOKEN
         sync: false
       - key: CLIENT_ID
         sync: false
-      - key: GUILD_ID
-        sync: false
       - key: OWNER_IDS
         sync: false
-      - key: YT_COOKIES
+      - key: SUPABASE_URL
         sync: false
-      - key: RAPIDAPI_KEY
+      - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
+      - key: LAVALINK_HOST
+        sync: false
+      - key: LAVALINK_PORT
+        value: 2333
+      - key: LAVALINK_PASSWORD
+        sync: false
+      - key: LAVALINK_SECURE
+        value: "false"
+      - key: WEB_URL
+        sync: false
+      - key: DISCORD_CLIENT_SECRET
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true

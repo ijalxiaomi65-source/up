@@ -21,7 +21,7 @@ module.exports = {
             });
         }
 
-        queue.shuffle();
+        await queue.shuffle();
         await interaction.reply({ embeds: [createSuccessEmbed("Antrian musik berhasil diacak.", "🔀 Shuffle")] });
     }
 };

@@ -36,9 +36,13 @@ function startStatusRotation(client) {
 }
 
 module.exports = {
-    name: "ready",
+    name: "clientReady",
     once: true,
     async execute(client) {
+        clearInterval(client.ticketSweep);
+        client.ticketSweep = setInterval(() => require("../src/services/tickets/ticketService").sweep(client).catch(error => logger.error(`Ticket sweep: ${error.message}`)), 60000);
+        client.ticketSweep.unref();
+        await require("../services/game/sessionManager").restore(client);
         logger.success(`${client.user.tag} sudah online.`);
         logger.info(`Melayani ${client.guilds.cache.size} server | ${client.commands.size} command dimuat.`);
 
@@ -52,6 +56,7 @@ module.exports = {
         await registerCommands(client);
         startStatusRotation(client);
         await restoreVoiceGuards(client);
+        await client.distube?.restoreMusicPanels?.();
     }
 };
 

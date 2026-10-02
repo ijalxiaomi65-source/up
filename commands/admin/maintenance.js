@@ -1,10 +1,8 @@
 const { SlashCommandBuilder } = require("discord.js");
-const fs = require("fs");
-const path = require("path");
+const db = require("../../utils/database");
 const settings = require("../../settings.js");
 const { createSuccessEmbed } = require("../../utils/embeds.js");
 
-const SETTINGS_PATH = path.join(__dirname, "..", "..", "settings.js");
 
 module.exports = {
     ownerOnly: true,
@@ -16,9 +14,11 @@ module.exports = {
     async execute(interaction) {
         const sub = interaction.options.getSubcommand();
         settings.maintenance.enabled = sub === "on";
+        db.getDB().stats.maintenance = settings.maintenance.enabled;
+        await db.save();
 
         await interaction.reply({
-            embeds: [createSuccessEmbed(`Maintenance mode telah **${sub === "on" ? "diaktifkan" : "dinonaktifkan"}**.\n(Catatan: pengaturan ini akan reset saat bot di-restart karena tidak ditulis ulang ke settings.js secara permanen.)`)]
+            embeds: [createSuccessEmbed(`Maintenance mode telah **${sub === "on" ? "diaktifkan" : "dinonaktifkan"}**.`)]
         });
     }
 };

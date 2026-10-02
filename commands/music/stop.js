@@ -18,10 +18,9 @@ module.exports = {
         try {
             const voice = queue.voice;
             await queue.stop();
-            // DisTube v5: queue.stop() tidak lagi otomatis keluar voice channel,
-            // jadi kita tegakkan sendiri sesuai settings.music.leaveOnStop.
+            // Explicit disconnect follows the configured stop behavior.
             if (settings.music.leaveOnStop) {
-                voice?.leave();
+                await voice?.leave();
             }
             await interaction.reply({ embeds: [createSuccessEmbed("Musik dihentikan dan antrian dihapus.", "⏹️ Stop")] });
         } catch (err) {

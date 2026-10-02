@@ -77,13 +77,14 @@ async function startHunt(message, userId) {
         return message.reply({ embeds: [createErrorEmbed("❌ Kamu masih punya sesi hunting yang berjalan.")] });
     }
 
-    await message.reply({
+    const sent = await message.reply({
         embeds: [createInfoEmbed(
             `Kamu pergi ke ${location}...\n\n${rarityInfo.emoji} **${template.emoji} ${template.name}** (${rarityInfo.label}) muncul!`,
             "🌲 HUNTING"
         )],
         components: [buildRow(session.id)]
     });
+    await sessionManager.bindMessage(session, sent);
 }
 
 async function handleButton(interaction, action, gameId) {

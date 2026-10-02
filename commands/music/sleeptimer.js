@@ -57,7 +57,7 @@ module.exports = {
             if (!activeQueue) return;
             const voice = activeQueue.voice;
             await activeQueue.stop();
-            if (settings.music.leaveOnStop) voice?.leave();
+            if (settings.music.leaveOnStop) await voice?.leave();
             await interaction.client.distube?.updateMusicPanel?.(activeQueue, null, "Sleep timer selesai. Musik dihentikan otomatis.");
         });
 

@@ -20,14 +20,9 @@ module.exports = {
             return interaction.reply({ embeds: [createErrorEmbed("Kamu tidak bisa mengirim coin ke bot.")], ephemeral: true });
         }
 
-        const sender = db.getUser(interaction.user.id);
-        if (sender.balance < amount) {
-            return interaction.reply({ embeds: [createErrorEmbed("Saldo kamu tidak cukup.")], ephemeral: true });
-        }
-
-        const receiver = db.getUser(target.id);
-        db.updateUser(interaction.user.id, { balance: sender.balance - amount });
-        db.updateUser(target.id, { balance: receiver.balance + amount });
+        const result = require("../../services/economy/economyService.js").transfer(interaction.user.id, target.id, amount);
+        if (!result.ok) return interaction.reply({ embeds: [createErrorEmbed(result.error)], ephemeral: true });
+        await db.flush();
 
         await interaction.reply({
             embeds: [createSuccessEmbed(`${interaction.user} mengirim ${settings.economy.currencyIcon} **${amount}** ke ${target}.`, "💸 Transfer Berhasil")]

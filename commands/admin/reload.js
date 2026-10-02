@@ -20,7 +20,6 @@ module.exports = {
             return interaction.editReply({ embeds: [createSuccessEmbed(`Berhasil reload ${client.commands.size} command.`)] });
         }
         if (sub === "events") {
-            client.removeAllListeners();
             loadEvents(client);
             return interaction.editReply({ embeds: [createSuccessEmbed("Berhasil reload semua event listener.")] });
         }

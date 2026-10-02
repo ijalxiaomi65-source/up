@@ -1,6 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require("discord.js");
 const { createSuccessEmbed, createErrorEmbed } = require("../../utils/embeds.js");
-const logger = require("../../utils/logger.js");
 
 module.exports = {
     modOnly: true,
@@ -12,6 +11,13 @@ module.exports = {
         .addStringOption((o) => o.setName("reason").setDescription("Alasan timeout"))
         .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
     async execute(interaction) {
+        const targetUser = interaction.options.getUser?.("user");
+        if (targetUser) {
+            const targetMember = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
+            if (targetUser.id === interaction.guild.ownerId || (targetMember && interaction.user.id !== interaction.guild.ownerId && targetMember.roles.highest.position >= interaction.member.roles.highest.position)) {
+                return interaction.reply({ content: "Target berada pada role yang sama atau lebih tinggi dari kamu.", ephemeral: true });
+            }
+        }
         const target = interaction.options.getUser("user");
         const minutes = interaction.options.getInteger("minutes");
         const reason = interaction.options.getString("reason") || "Tidak ada alasan diberikan";
@@ -23,11 +29,8 @@ module.exports = {
 
         try {
             await member.timeout(minutes * 60 * 1000, reason);
+            await require("../../src/services/moderation/caseService").recordInteraction(interaction, "timeout");
             await interaction.reply({ embeds: [createSuccessEmbed(`${target.tag} di-timeout selama ${minutes} menit.\n**Alasan:** ${reason}`, "🔇 Member Timed Out")] });
-            await logger.sendLog(interaction.client, interaction.guild.id, createSuccessEmbed(
-                `**User:** ${target.tag}\n**Durasi:** ${minutes} menit\n**Reason:** ${reason}\n**Moderator:** ${interaction.user.tag}`,
-                "🔇 Member Timed Out"
-            ));
         } catch (err) {
             await interaction.reply({ embeds: [createErrorEmbed(`Gagal timeout: ${err.message}`)], ephemeral: true });
         }

@@ -103,11 +103,12 @@ function buildButtons(session, disabled = false, pendingIdx = null) {
 
 async function safeEdit(session, payload) {
     if (!session.message) return;
+    await sessionManager.checkpoint(session);
     await session.message.edit(payload).catch(() => {});
 }
 
 async function settle(session, { won, payout, resultText, showAll = true }) {
-    sessionManager.endSession(session.id);
+    if (!sessionManager.endSession(session.id)) return;
 
     if (won && payout > 0) {
         economy.addBalance(session.ownerId, payout);
@@ -140,11 +141,11 @@ async function startGame(message, ownerId, bet, mineCount) {
     }
 
     const sentMsg = await message.reply({ embeds: [buildEmbed(session)], components: buildButtons(session) });
-    session.message = sentMsg;
+    await sessionManager.bindMessage(session, sentMsg);
     return { ok: true };
 }
 
-async function handleButton(interaction, action, gameId, tileIndex) {
+async function handleButtonUnlocked(interaction, action, gameId, tileIndex) {
     const session = sessionManager.getSession(gameId);
 
     if (!session) {
@@ -160,17 +161,19 @@ async function handleButton(interaction, action, gameId, tileIndex) {
         }
         const multiplier = engine.calculateMultiplier(session.data.size, session.data.mines.size, session.data.safeOpened);
         const payout = Math.floor(session.data.bet * multiplier);
+        await sessionManager.checkpoint(session);
         await interaction.update({ embeds: [buildEmbed(session)], components: buildButtons(session, true) });
         return settle(session, { won: true, payout, resultText: `💰 Cash out berhasil! Kamu mendapat **${fmt(payout)}** ${settings.economy.currencyIcon}` });
     }
 
     if (action === "tile") {
         const idx = Number(tileIndex);
-        if (session.data.revealed.has(idx)) {
+        if (!Number.isInteger(idx) || idx < 0 || idx >= session.data.size || session.data.revealed.has(idx)) {
             return interaction.reply({ embeds: [createErrorEmbed("❌ Tile ini sudah dibuka.")], ephemeral: true });
         }
 
         // --- animasi flip: ack cepat dengan tile ini menampilkan "❔" (semua tombol dikunci sesaat) ---
+        await sessionManager.checkpoint(session);
         await interaction.update({ embeds: [buildEmbed(session)], components: buildButtons(session, true, idx) });
         await sleep(FLIP_DELAY_MS);
 
@@ -197,4 +200,14 @@ async function handleButton(interaction, action, gameId, tileIndex) {
     }
 }
 
-module.exports = { startGame, handleButton };
+async function handleButton(interaction, action, gameId, tileIndex) {
+    const active = sessionManager.getSession(gameId);
+    if (active && interaction.message) active.message = interaction.message;
+    const handled = await sessionManager.withAction(gameId, interaction.user.id,
+        () => handleButtonUnlocked(interaction, action, gameId, tileIndex));
+    if (!handled) await interaction.reply({
+        embeds: [createErrorEmbed("Game sedang diproses, sudah berakhir, atau bukan milikmu.")], ephemeral: true
+    });
+}
+
+module.exports = { startGame, handleButton, onTimeout };

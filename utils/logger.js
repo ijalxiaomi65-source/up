@@ -1,43 +1,45 @@
 const settings = require("../settings.js");
 const { getGuild } = require("./database.js");
-const { c } = require("./colors.js");
 
-// Hanya jam:menit:detik -> pendek & rapi, TIDAK ada tanggal (sesuai request v2).
-function time() {
-    return c(new Date().toTimeString().slice(0, 8), "gray");
+const levels = { debug: 10, info: 20, warn: 30, error: 40 };
+function redact(value) {
+    let text = String(value);
+    for (const key of [
+        "DISCORD_TOKEN",
+        "SUPABASE_SERVICE_ROLE_KEY",
+        "LAVALINK_PASSWORD",
+        "SESSION_SECRET",
+        "DISCORD_CLIENT_SECRET",
+    ])
+        if (process.env[key]) text = text.split(process.env[key]).join("[REDACTED]");
+    return text.replace(/Bearer\s+[A-Za-z0-9._~-]+/g, "Bearer [REDACTED]");
 }
-
-function tag(label, color) {
-    return c(`${label}`, color, { bold: true });
+function write(level, message, metadata = {}) {
+    if (levels[level] < (levels[process.env.LOG_LEVEL] || 20)) return;
+    const safe = Object.fromEntries(
+        Object.entries(metadata).map(([key, value]) => [
+            key,
+            /token|secret|password|authorization|cookie/i.test(key)
+                ? "[REDACTED]"
+                : redact(typeof value === "object" ? JSON.stringify(value) : value),
+        ]),
+    );
+    const record = {
+        timestamp: new Date().toISOString(),
+        level: level.toUpperCase(),
+        service: "bot",
+        ...safe,
+        message: redact(message),
+    };
+    (level === "error" ? console.error : console.log)(JSON.stringify(record));
 }
-
-function line(label, color, msg) {
-    return `${time()} ${c("│", "gray")} ${tag(label.padEnd(7, " "), color)} ${c("│", "gray")} ${msg}`;
-}
-
-function info(msg) {
-    console.log(line("INFO", "cyan", msg));
-}
-
-function warn(msg) {
-    console.log(line("WARN", "yellow", msg));
-}
-
-function error(msg) {
-    console.error(line("ERROR", "red", msg));
-}
-
-function game(msg) {
-    console.log(line("GAME", "magenta", msg));
-}
-
-function economy(msg) {
-    console.log(line("ECONOMY", "green", msg));
-}
-
-function success(msg) {
-    console.log(line("OK", "green", msg));
-}
+const info = (message, metadata) => write("info", message, metadata);
+const warn = (message, metadata) => write("warn", message, metadata);
+const error = (message, metadata) => write("error", message, metadata);
+const debug = (message, metadata) => write("debug", message, metadata);
+const game = (message) => info(message, { service: "game" });
+const economy = (message) => info(message, { service: "economy" });
+const success = info;
 
 /**
  * Kirim embed log ke log channel guild (jika dikonfigurasi),
@@ -63,4 +65,4 @@ async function sendLog(client, guildId, embed) {
     }
 }
 
-module.exports = { info, warn, error, game, economy, success, sendLog };
+module.exports = { info, warn, error, debug, game, economy, success, sendLog };

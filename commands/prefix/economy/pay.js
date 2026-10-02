@@ -30,6 +30,7 @@ module.exports = {
             return message.reply({ embeds: [createErrorEmbed(result.error)] });
         }
 
+        await require("../../../utils/database.js").flush();
         await message.reply({
             embeds: [createSuccessEmbed(`${message.author} mengirim **${parsed.amount.toLocaleString("id-ID")}** ${settings.economy.currencyIcon} ke ${target}.`, "💸 TRANSFER BERHASIL")]
         });

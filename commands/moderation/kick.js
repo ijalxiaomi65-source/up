@@ -1,6 +1,5 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require("discord.js");
 const { createSuccessEmbed, createErrorEmbed } = require("../../utils/embeds.js");
-const logger = require("../../utils/logger.js");
 
 module.exports = {
     modOnly: true,
@@ -11,6 +10,13 @@ module.exports = {
         .addStringOption((o) => o.setName("reason").setDescription("Alasan kick"))
         .setDefaultMemberPermissions(PermissionFlagsBits.KickMembers),
     async execute(interaction) {
+        const targetUser = interaction.options.getUser?.("user");
+        if (targetUser) {
+            const targetMember = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
+            if (targetUser.id === interaction.guild.ownerId || (targetMember && interaction.user.id !== interaction.guild.ownerId && targetMember.roles.highest.position >= interaction.member.roles.highest.position)) {
+                return interaction.reply({ content: "Target berada pada role yang sama atau lebih tinggi dari kamu.", ephemeral: true });
+            }
+        }
         const target = interaction.options.getUser("user");
         const reason = interaction.options.getString("reason") || "Tidak ada alasan diberikan";
         const member = await interaction.guild.members.fetch(target.id).catch(() => null);
@@ -20,11 +26,8 @@ module.exports = {
 
         try {
             await member.kick(reason);
+            await require("../../src/services/moderation/caseService").recordInteraction(interaction, "kick");
             await interaction.reply({ embeds: [createSuccessEmbed(`${target.tag} berhasil di-kick.\n**Alasan:** ${reason}`, "👢 Member Kicked")] });
-            await logger.sendLog(interaction.client, interaction.guild.id, createSuccessEmbed(
-                `**User:** ${target.tag}\n**Reason:** ${reason}\n**Moderator:** ${interaction.user.tag}\n**Time:** <t:${Math.floor(Date.now()/1000)}:F>`,
-                "👢 Member Kicked"
-            ));
         } catch (err) {
             await interaction.reply({ embeds: [createErrorEmbed(`Gagal kick: ${err.message}`)], ephemeral: true });
         }

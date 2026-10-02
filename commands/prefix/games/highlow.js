@@ -34,14 +34,8 @@ module.exports = {
             return message.reply({ embeds: [createErrorEmbed(`⏳ Tunggu **${remaining}s** lagi sebelum main HighLow lagi.`)] });
         }
 
-        const escrowed = economy.removeBalance(userId, parsed.amount);
-        if (!escrowed) {
-            return message.reply({ embeds: [createErrorEmbed("❌ Saldo cash kamu tidak cukup.")] });
-        }
-
         const result = await highlowController.startGame(message, userId, parsed.amount);
         if (!result.ok) {
-            economy.addBalance(userId, parsed.amount);
             return message.reply({ embeds: [createErrorEmbed(result.error)] });
         }
     }

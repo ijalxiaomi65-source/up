@@ -8,6 +8,7 @@
  */
 
 const cooldowns = new Map();
+let nextSweep = 0;
 
 /**
  * Cek + set cooldown sekaligus.
@@ -23,6 +24,10 @@ function checkCooldown(gameKey, userId, cooldownMs) {
         return Math.ceil((expiry - now) / 1000);
     }
 
+    if (now >= nextSweep) {
+        for (const [entry, expires] of cooldowns) if (expires <= now) cooldowns.delete(entry);
+        nextSweep = now + 60000;
+    }
     cooldowns.set(key, now + cooldownMs);
     return 0;
 }

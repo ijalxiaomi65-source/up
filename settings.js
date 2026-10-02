@@ -1,3 +1,5 @@
+// Load local environment without replacing platform-provided variables.
+try { process.loadEnvFile(); } catch (error) { if (error.code !== "ENOENT") throw error; }
 /**
  * ============================================
  *  ZEECHEI BOT - SETTINGS.JS
@@ -12,7 +14,6 @@
  *  di bawah ("") yang dipakai - jadi tetap bisa diisi manual juga kalau mau.
  * ============================================
  */
-const path = require("path");
 
 module.exports = {
     // Token bot Discord kamu (dari Discord Developer Portal).
@@ -31,7 +32,7 @@ module.exports = {
     // ID Discord owner bot (bisa lebih dari satu).
     // Di Render, Environment Variable OWNER_IDS diisi dipisah koma,
     // contoh: 1443804231776862228,9988776655443322
-    ownerIds: (process.env.OWNER_IDS || "1443804231776862228")
+    ownerIds: (process.env.OWNER_IDS || "")
         .split(",")
         .map((id) => id.trim())
         .filter(Boolean),
@@ -186,54 +187,6 @@ module.exports = {
         // Catatan: role ini belum ditegakkan otomatis oleh command bawaan, sediakan untuk pengembangan lebih lanjut.
         djRoleId: "",
 
-        // (Opsional) Kredensial Spotify API. Kosongkan untuk menggunakan token otomatis (biasanya sudah cukup).
-        // Buat di https://developer.spotify.com/dashboard jika ingin resolusi playlist Spotify lebih stabil.
-        spotify: {
-            clientId: "",
-            clientSecret: ""
-        },
-
-        // ==== YouTube (yt-dlp) troubleshooting (v3) ====
-        // YouTube makin sering nge-block request otomatis dengan pesan
-        // "Sign in to confirm you're not a bot" - ini masalah dari sisi YouTube,
-        // BUKAN bug di bot. Dua opsi di bawah dibaca otomatis oleh yt-dlp lewat
-        // file config global (lihat utils/ytdlpConfig.js) setiap kali bot start.
-        youtube: {
-            // Coba beberapa "player client" yt-dlp secara berurutan. Ini SERING
-            // cukup buat lolos dari bot-check tanpa perlu cookies sama sekali.
-            // Kosongkan array ini untuk mematikan opsi ini.
-            // "tv" & "mweb" saat ini (2026) paling jarang kena block dibanding
-            // "android"/"ios" yang makin sering diminta PO Token oleh YouTube.
-            playerClients: ["tv", "mweb", "android", "web"],
-
-            // Jangan pakai JS runtime eksternal di plugin DisTube. yt-dlp memang
-            // bisa menggunakannya, tetapi runtime Node dapat menulis peringatan
-            // "Deprecated..." ke stderr; wrapper @distube/yt-dlp menggabungkan
-            // stderr ke output JSON dan kemudian gagal parse. Cookies valid +
-            // playerClients di atas sudah cukup untuk jalur utama.
-            jsRuntime: "",
-
-            // (v3.1) Paksa yt-dlp pakai IPv4. Banyak hosting cloud (termasuk Railway)
-            // punya IPv6 yang reputasinya lebih gampang di-flag YouTube dibanding IPv4
-            // (satu blok /64 dianggap "satu" sumber oleh YouTube). Set false untuk
-            // mematikan kalau kamu tahu network host kamu IPv6-only.
-            forceIpv4: true,
-
-            // (Opsional, TERAKHIR kalau opsi di atas masih kena block terus)
-            // Path absolut ke file cookies.txt (format Netscape) hasil export dari
-            // browser yang sudah login YouTube. Kosongkan ("") untuk tidak pakai cookies.
-            //
-            // ⚠️ PENTING - BACA INI:
-            // - JANGAN PERNAH commit file cookies.txt ke git/GitHub (masukkan ke .gitignore).
-            //   Cookies ini setara sesi login akun YouTube kamu - kalau bocor, akun bisa dipakai orang lain.
-            // - Pakai akun YouTube "buangan" (bukan akun utama/pribadi kamu) khusus buat ini.
-            // - Cookies bisa expired/invalid lagi kalau kamu logout dari akun itu di browser asalnya.
-            // - Di Render: JANGAN commit cookies.txt ke GitHub. Tempel isi file cookies.txt
-            //   ke Environment Variable bernama YT_COOKIES di dashboard Render - bot akan
-            //   otomatis menulis ulang isinya ke cookies.txt setiap kali start (lihat index.js).
-            // Selalu absolut supaya tetap terbaca saat current working directory
-            // Render berubah.
-            cookiesPath: path.join(__dirname, "cookies.txt")
-        }
+        // Audio sources and plugins are configured on the external Lavalink node.
     }
 };

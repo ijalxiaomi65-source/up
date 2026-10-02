@@ -74,6 +74,7 @@ function buildButtons(gameId, { disabled = false, canDouble = true } = {}) {
 
 async function safeEdit(session, payload) {
     if (!session.message) return;
+    await sessionManager.checkpoint(session);
     await session.message.edit(payload).catch(() => {});
 }
 
@@ -82,7 +83,7 @@ async function safeEdit(session, payload) {
  * Dealer HARUS sudah selesai bermain (dealerHand final) sebelum fungsi ini dipanggil.
  */
 async function settle(session, outcome) {
-    sessionManager.endSession(session.id);
+    if (!sessionManager.endSession(session.id)) return;
 
     const total = currentBet(session);
     let resultText;
@@ -175,7 +176,7 @@ async function startGame(message, ownerId, bet) {
         embeds: [buildEmbed(session, { dealerHidden: new Set([0, 1]), playerHidden: new Set([0, 1]) })],
         components: [buildButtons(session.id, { disabled: true })]
     });
-    session.message = sentMsg;
+    await sessionManager.bindMessage(session, sentMsg);
 
     // --- Frame 1: kartu player ke-1 dibuka ---
     await sleep(FLIP_DELAY_MS);
@@ -204,7 +205,7 @@ async function startGame(message, ownerId, bet) {
 /**
  * Menangani interaksi tombol HIT / STAND / DOUBLE.
  */
-async function handleButton(interaction, action, gameId) {
+async function handleButtonUnlocked(interaction, action, gameId) {
     const session = sessionManager.getSession(gameId);
 
     if (!session) {
@@ -219,6 +220,7 @@ async function handleButton(interaction, action, gameId) {
         const newIdx = session.data.playerHand.length - 1;
 
         // Ack cepat (wajib) dengan kartu baru masih tertutup -> efek "buka kartu"
+        await sessionManager.checkpoint(session);
         await interaction.update({
             embeds: [buildEmbed(session, { playerHidden: new Set([newIdx]) })],
             components: [buildButtons(session.id, { disabled: true })]
@@ -238,6 +240,7 @@ async function handleButton(interaction, action, gameId) {
     }
 
     if (action === "stand") {
+        await sessionManager.checkpoint(session);
         await interaction.update({ embeds: [buildEmbed(session)], components: [buildButtons(session.id, { disabled: true })] });
         return resolveStand(session);
     }
@@ -249,11 +252,14 @@ async function handleButton(interaction, action, gameId) {
         if (!economy.hasBalance(session.ownerId, session.data.bet)) {
             return interaction.reply({ embeds: [createErrorEmbed("❌ Saldo kamu tidak cukup untuk double.")], ephemeral: true });
         }
-        economy.removeBalance(session.ownerId, session.data.bet);
         session.data.doubled = true;
+        const user = require("../../../utils/database").getUser(session.ownerId);
+        // Include the double-down flag and second escrow debit in one snapshot.
+        user.balance -= session.data.bet;
         session.data.playerHand.push(session.data.deck.pop());
         const newIdx = session.data.playerHand.length - 1;
 
+        await sessionManager.checkpoint(session);
         await interaction.update({
             embeds: [buildEmbed(session, { playerHidden: new Set([newIdx]) })],
             components: [buildButtons(session.id, { disabled: true })]
@@ -270,4 +276,14 @@ async function handleButton(interaction, action, gameId) {
     }
 }
 
-module.exports = { startGame, handleButton };
+async function handleButton(interaction, action, gameId, tileIndex) {
+    const active = sessionManager.getSession(gameId);
+    if (active && interaction.message) active.message = interaction.message;
+    const handled = await sessionManager.withAction(gameId, interaction.user.id,
+        () => handleButtonUnlocked(interaction, action, gameId, tileIndex));
+    if (!handled) await interaction.reply({
+        embeds: [createErrorEmbed("Game sedang diproses, sudah berakhir, atau bukan milikmu.")], ephemeral: true
+    });
+}
+
+module.exports = { startGame, handleButton, onTimeout };

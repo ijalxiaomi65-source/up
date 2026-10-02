@@ -27,7 +27,7 @@ module.exports = {
             });
         }
 
-        const [removed] = queue.songs.splice(index, 1);
+        const removed = await queue.remove(index);
         await interaction.reply({
             embeds: [createSuccessEmbed(`**[${removed.name}](${removed.url})** dihapus dari antrian.`, "🗑️ Dihapus")]
         });

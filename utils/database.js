@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 
-const DB_PATH = path.join(__dirname, "..", "database", "database.json");
+const DB_PATH = process.env.LEGACY_DATABASE_PATH || path.join(__dirname, "..", "database", "database.json");
 
 const DEFAULT_DB = {
     guilds: {},
@@ -78,6 +78,7 @@ const DEFAULT_USER = {
     stats: { huntCount: 0, cratesOpened: 0 },
 
     // ==== Music (v3) ====
+    activeGames: {},
     favoriteSongs: [], // [{ name, url, addedAt }]
     playlists: {} // { "nama playlist": [{ name, url, duration, thumbnail, addedAt }] }
 };
@@ -114,6 +115,17 @@ function migrateGuildShape(guild) {
 }
 
 let cache = null;
+let runtime = null;
+const backend = process.env.DATABASE_BACKEND || (process.env.NODE_ENV === "production" ? "supabase" : "legacy");
+if (!["legacy", "supabase"].includes(backend)) throw new Error("Invalid DATABASE_BACKEND");
+async function initialize() {
+    if (backend === "supabase") {
+        runtime = new (require("../src/database/repositories/runtimeRepository").RuntimeRepository)();
+        cache = { ...structuredClone(DEFAULT_DB), ...await runtime.initialize() };
+    } else load();
+}
+async function close() { await flush(); if (runtime) await runtime.close(); }
+function status() { try { load(); return { ready:true, backend }; } catch { return {ready:false, backend}; } }
 let writeQueue = Promise.resolve();
 
 function ensureFile() {
@@ -121,19 +133,29 @@ function ensureFile() {
         fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
     }
     if (!fs.existsSync(DB_PATH)) {
+        if (process.env.LEGACY_DATABASE_PATH) throw new Error("Configured legacy database missing; restore your backup before startup");
         fs.writeFileSync(DB_PATH, JSON.stringify(DEFAULT_DB, null, 4));
     }
 }
 
 function load() {
+    if (backend === "supabase") {
+        if (!runtime || !cache) throw new Error("Supabase runtime must initialize before commands load");
+        runtime.assertHealthy();
+    }
     if (cache) return cache;
     ensureFile();
     try {
         const raw = fs.readFileSync(DB_PATH, "utf8");
-        cache = { ...DEFAULT_DB, ...JSON.parse(raw) };
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) ||
+            !parsed.users || typeof parsed.users !== "object" || Array.isArray(parsed.users) ||
+            !parsed.guilds || typeof parsed.guilds !== "object" || Array.isArray(parsed.guilds) || !Array.isArray(parsed.blacklist)) {
+            throw new Error("Invalid legacy database shape");
+        }
+        cache = { ...structuredClone(DEFAULT_DB), ...parsed };
     } catch (err) {
-        console.error("[DATABASE] Gagal membaca database.json, menggunakan default.", err);
-        cache = JSON.parse(JSON.stringify(DEFAULT_DB));
+        throw new Error("Database legacy gagal dibaca. File dipertahankan; pulihkan backup sebelum melanjutkan.", { cause: err });
     }
     return cache;
 }
@@ -141,23 +163,22 @@ function load() {
 // Semua penulisan file dilakukan berurutan (queued) supaya JSON tidak korup
 // saat banyak event terjadi bersamaan (write-queue sederhana).
 function persist() {
-    writeQueue = writeQueue.then(() => {
-        return new Promise((resolve) => {
-            const tmpPath = DB_PATH + ".tmp";
-            fs.writeFile(tmpPath, JSON.stringify(cache, null, 4), (err) => {
-                if (err) {
-                    console.error("[DATABASE] Gagal menulis file sementara:", err);
-                    return resolve();
-                }
-                fs.rename(tmpPath, DB_PATH, (err2) => {
-                    if (err2) console.error("[DATABASE] Gagal menyimpan database.json:", err2);
-                    resolve();
-                });
-            });
-        });
+    const snapshot = JSON.stringify(load(), null, 4);
+    const actor = require("../src/utils/requestContext").getStore()?.actor || "bot";
+    const operation = writeQueue.catch(() => {}).then(async () => {
+        if (runtime) return runtime.persist(JSON.parse(snapshot), actor);
+        const tmpPath = `${DB_PATH}.tmp`;
+        await fs.promises.writeFile(tmpPath, snapshot, { encoding: "utf8", mode: 0o600 });
+        await fs.promises.rename(tmpPath, DB_PATH);
     });
-    return writeQueue;
+    writeQueue = operation;
+    // Legacy callers do not all await save yet; attach a handler without hiding
+    // rejection from callers that explicitly await persistence.
+    operation.catch((error) => console.error("[DATABASE] Persistence failed:", error.message));
+    return operation;
 }
+
+function flush() { return writeQueue; }
 
 function getDB() {
     const db = load();
@@ -185,7 +206,14 @@ function getGuild(guildId) {
 
 function updateGuild(guildId, data) {
     const db = load();
-    db.guilds[guildId] = { ...getGuild(guildId), ...data };
+    const current = getGuild(guildId);
+    const next = { ...data };
+    for (const type of ["welcome", "goodbye"]) {
+        if (Object.hasOwn(data, `${type}Channel`) && !data[type] && current[type]) next[type] = { ...current[type], channelId:data[`${type}Channel`] };
+    }
+    const configKeys = ["welcome", "welcomeChannel", "goodbye", "goodbyeChannel", "autoRole", "logChannel", "leveling", "prefix", "musicMode247", "automod", "ticket", "moderation"];
+    if (!Object.hasOwn(data, "configVersion") && configKeys.some(key => Object.hasOwn(data, key))) next.configVersion = (current.configVersion || 0) + 1;
+    db.guilds[guildId] = { ...current, ...next };
     save();
     return db.guilds[guildId];
 }
@@ -206,6 +234,15 @@ function updateUser(userId, data) {
     db.users[userId] = { ...getUser(userId), ...data };
     save();
     return db.users[userId];
+}
+
+function updateUsers(updates) {
+    const database = load();
+    const next = {};
+    for (const [id, data] of Object.entries(updates)) next[id] = { ...getUser(id), ...data };
+    Object.assign(database.users, next);
+    save();
+    return next;
 }
 
 function isBlacklisted(userId) {
@@ -248,12 +285,17 @@ function clearWarnings(guildId, userId) {
 }
 
 module.exports = {
+    initialize,
+    close,
+    status,
     getDB,
+    flush,
     save,
     getGuild,
     updateGuild,
     getUser,
     updateUser,
+    updateUsers,
     isBlacklisted,
     addBlacklist,
     removeBlacklist,

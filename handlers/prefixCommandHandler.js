@@ -71,8 +71,8 @@ function loadPrefixCommands() {
  * Hanya token PERTAMA yang dicek — mencegah bot memproses chat biasa
  * seperti "aku mau main ubj nanti".
  */
-function parseMessage(content) {
-    const prefix = (settings.textCommandPrefix || "z").toLowerCase();
+function parseMessage(content, guildId) {
+    const prefix = ((guildId && require("../utils/database").getGuild(guildId).prefix) || settings.textCommandPrefix || "z").toLowerCase();
     if (!content) return null;
 
     const trimmed = content.trim();
@@ -102,11 +102,17 @@ async function handlePrefixMessage(message) {
     // tapi kita jaga lagi di sini supaya modul ini aman dipakai standalone.
     if (message.author.bot || !message.guild) return false;
 
-    const parsed = parseMessage(message.content);
+    const parsed = parseMessage(message.content, message.guild?.id);
     if (!parsed) return false; // bukan command -> jangan lakukan apapun (termasuk tidak ada DB write)
 
     const command = registry.get(parsed.commandName);
     if (!command) return false;
+
+    const denied = require("../src/bot/middleware/accessPolicy.js").accessError(message.author.id, message.guild.id);
+    if (denied) {
+        await message.reply({ embeds: [createErrorEmbed(denied)] });
+        return true;
+    }
 
     // zgame disable <game> — cek per-server sebelum command judi dijalankan.
     if (command.category === "games") {
@@ -119,6 +125,7 @@ async function handlePrefixMessage(message) {
     }
 
     try {
+        require("../src/bot/middleware/persistenceBarrier").persistenceBarrier(message, ["reply"]);
         await command.execute(message, parsed.args);
     } catch (err) {
         logger.error(`[COMMAND] Error menjalankan z${parsed.commandName}: ${err.stack || err.message}`);

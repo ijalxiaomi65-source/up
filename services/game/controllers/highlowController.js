@@ -31,10 +31,7 @@ async function startGame(message, userId, bet) {
         userId,
         { bet, current },
         TIMEOUT_MS,
-        async (s) => {
-            economy.addBalance(s.ownerId, s.data.bet); // refund kalau timeout
-            message.channel.send({ content: `<@${s.ownerId}>`, embeds: [createInfoEmbed("⏳ HighLow kamu berakhir karena timeout. Bet dikembalikan.")] }).catch(() => {});
-        }
+        onTimeout
     );
 
     if (!session) {
@@ -42,7 +39,7 @@ async function startGame(message, userId, bet) {
     }
 
     const embed = createInfoEmbed(`Kartu sekarang: **${current}**\n\nBet: **${bet.toLocaleString("id-ID")}** ${settings.economy.currencyIcon}\n\nTebak kartu berikutnya lebih tinggi atau lebih rendah?`, "🔢 HIGH LOW");
-    await message.reply({ embeds: [embed], components: [buildRow(session.id)] });
+    await sessionManager.bindMessage(session, await message.reply({ embeds: [embed], components: [buildRow(session.id)] }));
     return { ok: true, session };
 }
 
@@ -88,4 +85,9 @@ async function handleButton(interaction, guess, gameId) {
     });
 }
 
-module.exports = { startGame, handleButton };
+async function onTimeout(session) {
+    if (!sessionManager.endSession(session.id)) return;
+    economy.addBalance(session.ownerId, session.data.bet);
+    await session.message?.edit({content:"HighLow expired. Your bet was returned.",components:[]}).catch(()=>{});
+}
+module.exports = { startGame, handleButton, onTimeout };
