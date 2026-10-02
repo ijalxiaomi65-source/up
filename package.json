@@ -4,7 +4,7 @@
   "description": "Zeechei Bot - All-in-one Discord Bot (moderation, economy, leveling, ticket, games, dsb)",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
+    "start": "node scripts/start.js",
     "test": "node --require ./tests/isolate.cjs --test tests/*.test.cjs",
     "check": "node scripts/check.js",
     "db:migrate": "node database/migration/migrateLegacy.js",

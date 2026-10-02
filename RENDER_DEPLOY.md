@@ -19,3 +19,9 @@ Drain/stop the old instance before replacement. The database rejects another wri
 while its 90-second lease is active. Configure deployment sequencing accordingly;
 this compatibility architecture does not support overlapping writers or replicas.
 The blueprint has been inspected locally, not deployed to a live Render account.
+
+For initial setup only, `SETUP_MODE=true` serves a public configuration landing page
+when required environment values are absent. It never starts the bot or storage,
+and all health/readiness endpoints return 503. Once SQL/migration/environment
+setup is complete, disable setup mode and redeploy with the same `npm start`.
+Do not count a live configuration page as a successful Discord deployment.

@@ -68,6 +68,7 @@ credentials into `settings.js`, source files, logs, screenshots, or browser code
 | `DISCORD_REDIRECT_URI` | If set, must equal `WEB_URL/api/auth/callback` |
 | `MUSIC_EMOJI_*` | Real guild-owned custom emoji markup; optional |
 | `NODE_ENV`, `LOG_LEVEL` | Production behavior and structured log verbosity |
+| `SETUP_MODE` | Opt-in public setup page while required credentials are missing; no bot/database initialization |
 | `LEGACY_DATABASE_PATH` | Explicit legacy rollback file; never used by Supabase runtime |
 
 ## Database and migration
@@ -229,3 +230,15 @@ through PGlite, and local HTTP requests. They do not claim live provider accepta
   do not reimport to reset accounts. Rehearse against an isolated project.
 
 See [acceptance status](docs/ACCEPTANCE.md) for the remaining implementation scope.
+
+### First deployment without credentials
+
+Set `SETUP_MODE=true` only when deploying the initial configuration page. `npm start`
+serves the public landing page if required bot/database/dashboard environment values
+are missing. No commands, authenticated APIs or database are loaded, and `/health`,
+`/api/health` and `/ready` return HTTP 503 with `configuration_required`. A reachable
+page is not evidence that the bot is online. Fill Environment privately, apply SQL
+and migrate data, then redeploy; the same startup command launches the full app
+when the required values are present. Set `SETUP_MODE=false` for normal operation.
+A Render Free service can spin down and is only suitable for this initial preview;
+choose an always-on plan before depending on continuous Discord availability.

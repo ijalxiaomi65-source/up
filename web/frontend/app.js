@@ -782,9 +782,11 @@ $("#logout").onclick = async () => {
             if (error.status !== 401) throw error;
             $("#login").hidden = false;
             $(".skip").href = "#login-main";
-            $("#login-status").textContent = config.oauthConfigured
-                ? "Only servers you manage are accessible."
-                : "Discord sign-in needs server configuration before it can be used.";
+            $("#login-status").textContent = config.setupRequired
+                ? "Setup is incomplete. The server owner needs to finish configuration before Zeechei can go online."
+                : config.oauthConfigured
+                  ? "Only servers you manage are accessible."
+                  : "Discord sign-in needs server configuration before it can be used.";
             if (!config.oauthConfigured) {
                 $("#login-link").removeAttribute("href");
                 $("#login-link").setAttribute("aria-disabled", "true");
