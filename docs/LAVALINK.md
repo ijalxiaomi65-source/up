@@ -49,7 +49,12 @@ use rotation, and karaoke/tremolo/vibrato/lowpass/distortion use native Lavalink
 filters. The panel only offers effects advertised by the connected node. Legacy
 Echo has no equivalent native Lavalink filter and is intentionally not offered.
 
-The connection enables server-side resume (60 seconds) and library-side recovery,
+The connection requests server-side resume (60 seconds) and enables library-side recovery.
+If a shared node rejects the optional session-resume setting with HTTP 403,
+the bot records a warning and uses library-side recovery; playback authorization
+failures still propagate. Seamless server-side resume is unavailable on that node.
+Node source/filter capabilities are fetched before restoring saved player settings.
+The client reconnects
 with bounded automatic reconnect attempts. Queue state survives a transient node
 connection interruption while this bot process is alive. Voice guard retries
 forced voice disconnects when enabled. Queue, position, volume, loop, autoplay, pause and filter snapshots are persisted

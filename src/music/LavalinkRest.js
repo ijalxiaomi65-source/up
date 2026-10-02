@@ -1,5 +1,18 @@
 const { Rest } = require("shoukaku");
 class LavalinkRest extends Rest {
+    async updateSession(resuming, timeout) {
+        if (resuming && this.resumeUnavailable) return { resuming: false, timeout: 0 };
+        try {
+            return await super.updateSession(resuming, timeout);
+        } catch (error) {
+            // Some shared nodes allow playback but forbid session resumption.
+            // Respect that policy and retain library-side player recovery.
+            if (!resuming || error.status !== 403 || !this.node.manager.options.resumeByLibrary) throw error;
+            this.resumeUnavailable = true;
+            this.node.manager.emit("resumeUnavailable", this.node.name);
+            return { resuming: false, timeout: 0 };
+        }
+    }
     async fetch(request) {
         try {
             return await super.fetch(request);

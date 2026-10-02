@@ -24,6 +24,11 @@ function createLavalink(client, logger, env = process.env) {
     });
     manager.on("error", (name, error) => logger.error(`Lavalink ${name}: ${error.message}`));
     manager.on("ready", (name) => logger.info(`Lavalink ${name} ready`));
+    manager.on("resumeUnavailable", (name) =>
+        logger.warn(
+            `Lavalink ${name} does not permit server session resumption; library recovery remains enabled.`,
+        ),
+    );
     manager.on("close", (name) => logger.warn(`Lavalink ${name} reconnecting`));
     return manager;
 }
