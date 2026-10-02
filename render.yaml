@@ -27,6 +27,8 @@ services:
         value: supabase
       - key: WEB_ENABLED
         value: "true"
+      - key: RUNTIME_HANDOFF
+        value: "true"
       # Keep the dashboard value so later Blueprint syncs do not re-enable setup.
       - key: SETUP_MODE
         sync: false

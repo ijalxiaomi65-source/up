@@ -65,11 +65,14 @@ The app builds with `npm ci --omit=dev` and starts with `npm start`, using Node
 external. No persistent disk is needed for the Supabase runtime.
 
 `numInstances: 1` and `autoDeployTrigger: off` are deliberate: the compatibility
-runtime permits only one active writer. During updates, drain/stop the old instance
-before starting its replacement, and allow the database lease to release/expire
-(up to 90 seconds). Render's normal overlapping rolling deployment is not a
-supported handover for this compatibility runtime. Do not enable replicas or
-unattended deployments until distributed handover is implemented and tested.
+runtime permits only one active writer. With `RUNTIME_HANDOFF=true` and Render's
+health check at `/`, a replacement waiting for the lease serves process liveness
+so Render can retire the old process. `/ready` and all application APIs remain
+503 during this handover. The new bot waits for release/expiry (up to 90 seconds)
+and loads the latest database snapshot before starting Discord. It never steals
+an active lease. The wait is bounded to three minutes; other database failures
+still stop startup immediately. This can briefly interrupt dashboard availability.
+Do not enable replicas. With handover disabled, stop the old process first.
 
 This avoids idle sleep, but it is not a guarantee of uninterrupted availability:
 maintenance, manual deploys, configuration failures and provider outages still

@@ -65,7 +65,9 @@ function startBot({ token, clientId, label }) {
 }
 
 async function main() {
-await require("./utils/database").initialize();
+await require("./src/database/runtimeHandoff").initializeWithHandoff({
+    initialize: () => require("./utils/database").initialize(), logger,
+});
 const clients = [];
 
 // Bot UTAMA - akses semua fitur (moderation, economy, ticket, leveling, dst),

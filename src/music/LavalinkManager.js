@@ -1,4 +1,5 @@
 const { Shoukaku, Connectors } = require("shoukaku");
+const { LavalinkRest } = require("./LavalinkRest");
 function createLavalink(client, logger, env = process.env) {
     const nodes = [];
     if (env.LAVALINK_HOST && env.LAVALINK_PASSWORD) {
@@ -12,6 +13,7 @@ function createLavalink(client, logger, env = process.env) {
         });
     } else logger.warn("Lavalink belum dikonfigurasi. Fitur bot lain tetap tersedia.");
     const manager = new Shoukaku(new Connectors.DiscordJS(client), nodes, {
+        structures: { rest: LavalinkRest },
         resume: true,
         resumeTimeout: 60,
         resumeByLibrary: true,
