@@ -1,19 +1,35 @@
+# Paid, always-on bot + dashboard in one process. Applying this Blueprint
+# adopts the existing same-name service and changes its compute plan.
+# Render lists 0.5c-512mb at USD 7/month (excluding other usage/taxes).
 services:
   - type: web
-    name: zeechei-v4
+    name: zeechei-v4-dashboard
     runtime: node
+    repo: https://github.com/ijalxiaomi65-source/up
+    branch: coderabbit/upgrade-zeechei-v4-music-dashboard/7c79d5d0
+    region: singapore
+    plan: 0.5c-512mb
+    numInstances: 1
+    # Coordinate deployments while the compatibility runtime uses one writer.
+    autoDeployTrigger: "off"
+    maxShutdownDelaySeconds: 30
     buildCommand: npm ci --omit=dev
     startCommand: npm start
-    healthCheckPath: /health
+    # Keeps the requested setup page deployable before credentials are supplied.
+    # /ready remains 503 until the bot and its providers are ready.
+    healthCheckPath: /
     envVars:
       - key: NODE_VERSION
-        value: 22.12.0
+        value: 24.14.1
       - key: NODE_ENV
         value: production
       - key: DATABASE_BACKEND
         value: supabase
       - key: WEB_ENABLED
         value: "true"
+      # Keep the dashboard value so later Blueprint syncs do not re-enable setup.
+      - key: SETUP_MODE
+        sync: false
       - key: DISCORD_TOKEN
         sync: false
       - key: CLIENT_ID
@@ -27,13 +43,15 @@ services:
       - key: LAVALINK_HOST
         sync: false
       - key: LAVALINK_PORT
-        value: 2333
+        sync: false
       - key: LAVALINK_PASSWORD
         sync: false
       - key: LAVALINK_SECURE
-        value: "false"
-      - key: WEB_URL
         sync: false
+      - key: WEB_URL
+        value: https://zeechei-v4-dashboard.onrender.com
+      - key: DISCORD_REDIRECT_URI
+        value: https://zeechei-v4-dashboard.onrender.com/api/auth/callback
       - key: DISCORD_CLIENT_SECRET
         sync: false
       - key: SESSION_SECRET
